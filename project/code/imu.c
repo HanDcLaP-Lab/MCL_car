@@ -2,6 +2,7 @@
 
 // ================= 全局变量定义 =================
 car_angle = 0;
+float gyro_measureVal;
 // ================= 内部辅助函数 =================
 // 快速平方根倒数
 static float invSqrt(float x) {
@@ -16,5 +17,22 @@ static float invSqrt(float x) {
 
 
 void IMU_Update_Loop(void){
-    car_angle += imu660ra_gyro_transition(imu660ra_gyro_z) * IMU_DT;
+     gyro_measureVal = imu660ra_gyro_transition(imu660ra_gyro_z) * IMU_DT;
+     car_angle += Kalman_Update(&K_w , gyro_measureVal);
+}
+
+void IMU_Init(){
+    while(1)///定时器0初始化
+    {
+        if(imu660ra_init())
+        {
+           printf("\r\n imu660ra init error.");                                 // imu660ra 初始化失败
+        }
+        else
+        {
+           break;
+        }
+        //gpio_toggle_level(LED1);                                                // 翻转 LED 引脚输出电平 控制 LED 亮灭 初始化出错这个灯会闪的很慢
+    }
+    Kalman_Init(&K_w , 1e-4f,0.01,0);
 }

@@ -8,8 +8,7 @@
 #ifndef PI
 #define PI 3.1415926535f
 #endif
-
 extern float car_angle;
 void IMU_Update_Loop(void);
-
+void IMU_Init();
 #endif
