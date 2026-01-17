@@ -34,5 +34,5 @@ void IMU_Init(){
         }
         //gpio_toggle_level(LED1);                                                // 翻转 LED 引脚输出电平 控制 LED 亮灭 初始化出错这个灯会闪的很慢
     }
-    Kalman_Init(&K_w , 1e-4f,0.01,0);
+    Kalman_Init(&K_w , 0.01f,0.01,0);
 }
