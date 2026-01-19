@@ -40,8 +40,9 @@
 void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务函数      
 {
     pit_isr_flag_clear(PIT_CH0);
-  
-    tsl1401_collect_pit_handler();
+    tsl1401_collect_pit_handler(); ///逐飞库空例程自带，意义不明
+
+    Mecanum_Control_Loop();
       
     
 }

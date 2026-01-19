@@ -53,15 +53,18 @@ int main(void)
     // 此处编写用户代码 例如外设初始化代码等
 
     
-    
-    
-    
+    Encoder_Init();
+    Mecanum_Init();
+    pit_ms_init(PIT_CH0, 1);
+
+
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
         // 此处编写需要循环执行的代码
-        
-
+        Mecanum_Set_Velocity(0.2f, 0.0f, 0.0f);
+        Current_speed_display();
+        system_delay_ms(500);
         
 
 
