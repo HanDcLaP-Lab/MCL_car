@@ -19,9 +19,9 @@ static void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, flo
     int32_t duty = (int32_t)output;
     
     if (duty >= 0) {
-        gpio_set_level(dir_pin, 0); // 假设 0 为正转，需根据实际接线调整
+        gpio_set_level(dir_pin, 1); // 假设 0 为正转，需根据实际接线调整
     } else {
-        gpio_set_level(dir_pin, 1);
+        gpio_set_level(dir_pin, 0);
         duty = -duty;
     }
 
@@ -56,10 +56,10 @@ void Mecanum_Init(void) {
 
     // 3. 初始化 PID
     // &pid, kp, ki, kd, max_i, out_max
-    PID_Init(&pid_lf, 0, 0, 0, 0, 0);
-    PID_Init(&pid_rf, 0, 0, 0, 0, 0);
-    PID_Init(&pid_lb, 0, 0, 0, 0, 0);
-    PID_Init(&pid_rb, 0, 0, 0, 0, 0);
+    PID_Init(&pid_lf, KP, KI , KD, MAX_I, OUT_MAX);
+    PID_Init(&pid_rf, KP, KI , KD, MAX_I, OUT_MAX);
+    PID_Init(&pid_lb, KP, KI , KD, MAX_I, OUT_MAX);
+    PID_Init(&pid_rb, KP, KI , KD, MAX_I, OUT_MAX);
 
     // 4. 初始化目标值
     target_vel.vx = 0;
@@ -103,10 +103,10 @@ void Mecanum_Control_Loop(void) {
     target_v_rb = target_vel.vx - target_vel.vy + center_v;
 
     // 3. PID 计算
-    out_lf = PID_Calculate(&pid_lf, target_v_lf - encoder_data.lf * RPM_TO_MPS, CONTROL_DT);
-    out_rf = PID_Calculate(&pid_rf, target_v_rf - encoder_data.rf * RPM_TO_MPS, CONTROL_DT);
-    out_lb = PID_Calculate(&pid_lb, target_v_lb - encoder_data.lb * RPM_TO_MPS, CONTROL_DT);
-    out_rb = PID_Calculate(&pid_rb, target_v_rb - encoder_data.rb * RPM_TO_MPS, CONTROL_DT);
+    out_lf = 100 * PID_Calculate(&pid_lf, target_v_lf - encoder_data.lf , CONTROL_DT);
+    out_rf = 100 * PID_Calculate(&pid_rf, target_v_rf - encoder_data.rf , CONTROL_DT);
+    out_lb = 100 * PID_Calculate(&pid_lb, target_v_lb - encoder_data.lb , CONTROL_DT);
+    out_rb = 100 * PID_Calculate(&pid_rb, target_v_rb - encoder_data.rb , CONTROL_DT);
 
     // 4. 执行电机控制
     if(target_vel.unlock == true) {
@@ -116,11 +116,11 @@ void Mecanum_Control_Loop(void) {
     Motor_Set_Output(MOTOR_RB_PWM, MOTOR_RB_DIR, out_rb);
     }
 }
-
+//为方便显示，取mm/s
 void Current_speed_display(void)
 {
-    printf("LF: %.2f\r\n", (float)(encoder_data.lf * RPM_TO_MPS));
-    printf("RF: %.2f\r\n", (float)(encoder_data.rf * RPM_TO_MPS));
-    printf("LB: %.2f\r\n", (float)(encoder_data.lb * RPM_TO_MPS));
-    printf("RB: %.2f\r\n", (float)(encoder_data.rb * RPM_TO_MPS));
+    //printf("LF: %.2f\r\n", 100 * (float)(encoder_data.lf));
+    printf("RF: %d\r\n", (int16_t)(1000 *encoder_data.rf));
+    //printf("LB: %.2f\r\n", 100 * (float)(encoder_data.lb));
+    //printf("RB: %.2f\r\n", 100 * (float)(encoder_data.rb));
 }
