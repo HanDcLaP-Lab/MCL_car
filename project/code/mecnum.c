@@ -19,7 +19,7 @@ static void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, flo
     int32_t duty = (int32_t)output;
     
     if (duty >= 0) {
-        gpio_set_level(dir_pin, 1); // 假设 0 为正转，需根据实际接线调整
+        gpio_set_level(dir_pin, 1); 
     } else {
         gpio_set_level(dir_pin, 0);
         duty = -duty;
@@ -119,8 +119,8 @@ void Mecanum_Control_Loop(void) {
 //为方便显示，取mm/s
 void Current_speed_display(void)
 {
-    //printf("LF: %.2f\r\n", 100 * (float)(encoder_data.lf));
-    printf("RF: %d\r\n", (int16_t)(1000 *encoder_data.rf));
+    printf("%d,%d\n", (int16_t) (1000 *encoder_data.lf),(int16_t) (1000 *target_vel.vx));
+    //printf("RF: %d\r\n", (int16_t)(1000 *encoder_data.rf));
     //printf("LB: %.2f\r\n", 100 * (float)(encoder_data.lb));
     //printf("RB: %.2f\r\n", 100 * (float)(encoder_data.rb));
 }

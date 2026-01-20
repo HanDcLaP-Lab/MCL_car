@@ -9,17 +9,16 @@
 #define CAR_L           0.10f   // 前后轮轴距的一半 (Half Wheel Base)
 #define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.028f   // 轮子半径
-#define RPM_TO_MPS      1.8408e-5f   //(2.0f * 3.1415926f * WHEEL_RADIUS / 4096 *小齿轮(30)/大齿轮(70)) 脉冲数->米每秒
 #define PWM_MAX_M       7000.0f  // PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f   
 
-#define KP 180.0f
-#define KI 40.0f
+#define KP 280.0f
+#define KI 150.0f
 #define KD 0.0f
-#define MAX_I 15.0f
-#define OUT_MAX 40.0f
+#define MAX_I 30.0f
+#define OUT_MAX 60.0f
 // ================== 硬件引脚定义 ==================
 // 电机 PWM 通道定义
 #define MOTOR_LF_PWM    TCPWM_CH14_P00_2    // 左前 PWM
