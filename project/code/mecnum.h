@@ -5,33 +5,42 @@
 #include "pid.h"
 
 // ================== 车辆物理参数定义 ==================
-// 请根据实际小车尺寸修改 (单位: 米)
+// 请根据实际小车尺寸修改 (米)
 #define CAR_L           0.10f   // 前后轮轴距的一半 (Half Wheel Base)
 #define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.028f   // 轮子半径
 
-// 控制周期 (秒), 例如 10ms = 0.01f
+#define PWM_MAX_M       7000.0f  // PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
+
+// 控制周期 (秒)
 #define CONTROL_DT      0.001f   
 
+#define KP 180.0f
+#define KI 40.0f
+#define KD 0.0f
+#define MAX_I 15.0f
+#define OUT_MAX 40.0f
 // ================== 硬件引脚定义 ==================
-// 电机 PWM 通道定义 (参考 zf_driver_pwm.h)
-#define MOTOR_LF_PWM    TCPWM_CH00_P06_1    // 左前 PWM
-#define MOTOR_RF_PWM    TCPWM_CH01_P06_3    // 右前 PWM
-#define MOTOR_LB_PWM    TCPWM_CH02_P06_5    // 左后 PWM
-#define MOTOR_RB_PWM    TCPWM_CH06_P02_1    // 右后 PWM
+// 电机 PWM 通道定义
+#define MOTOR_LF_PWM    TCPWM_CH14_P00_2    // 左前 PWM
+#define MOTOR_RF_PWM    TCPWM_CH51_P18_6    // 右前 PWM
+#define MOTOR_LB_PWM    TCPWM_CH54_P18_3    // 左后 PWM
+#define MOTOR_RB_PWM    TCPWM_CH00_P06_1    // 右后 PWM
 
-// 电机方向引脚定义 (参考 zf_driver_gpio.h)
-#define MOTOR_LF_DIR    P06_2               // 左前 DIR
-#define MOTOR_RF_DIR    P06_4               // 右前 DIR
-#define MOTOR_LB_DIR    P06_6               // 左后 DIR
-#define MOTOR_RB_DIR    P02_2               // 右后 DIR
+// 电机方向引脚定义
+#define MOTOR_LF_DIR    P00_3               // 左前 DIR
+#define MOTOR_RF_DIR    P18_7               // 右前 DIR
+#define MOTOR_LB_DIR    P18_4               // 左后 DIR
+#define MOTOR_RB_DIR    P06_3               // 右后 DIR
 
 // ================== 结构体定义 ==================
 typedef struct {
     float vx;       // X轴速度 (m/s)
     float vy;       // Y轴速度 (m/s)
     float wz;       // 自转角速度 (rad/s)
-} Chassis_Target_t;
+
+    bool unlock;   //1解锁0上锁
+} Target_t;
 
 // ================== 函数声明 ==================
 
@@ -57,5 +66,7 @@ void Mecanum_Control_Loop(void);
  * @brief 停止所有电机
  */
 void Mecanum_Stop(void);
+
+void Current_speed_display(void);
 
 #endif // _MECANUM_H
