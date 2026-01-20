@@ -22,7 +22,6 @@
 #define ENCODER_DT 0.001f
 typedef struct {
     float lf,rf,lb,rb;//单位为m/s
-    float lf,rf,lb,rb;//单位为m/s
 } Encoder;
 
 extern Encoder encoder_data;

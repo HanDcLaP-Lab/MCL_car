@@ -101,6 +101,9 @@
 //-----------------------------------------------自定义文件---------------------------------------------------------//
 #include "imu.h"
 #include "kalman_filter.h"
+#include "pid.h"
+#include "encoder.h"
+#include "mecnum.h"
 //=====================================================组件应用层=====================================================
 #include "seekfree_assistant.h"
 #include "seekfree_assistant_interface.h"
