@@ -15,7 +15,7 @@ void Encoder_Init(){
 }
 
 void Encoder_GetCount(){
-    encoder_data.lf = encoder_get_count(ENCODER_QUAD_lf) / CONTROL_DT * RPM_TO_MPS;
+    encoder_data.lf = - encoder_get_count(ENCODER_QUAD_lf) / CONTROL_DT * RPM_TO_MPS;
     encoder_data.lf = Kalman_Update(&K_lf, encoder_data.lf) ;
     encoder_clear_count(ENCODER_QUAD_lf);
 
@@ -23,7 +23,7 @@ void Encoder_GetCount(){
     encoder_data.rf = Kalman_Update(&K_rf, encoder_data.rf);
     encoder_clear_count(ENCODER_QUAD_rf);
 
-    encoder_data.lb = encoder_get_count(ENCODER_QUAD_lb) / CONTROL_DT * RPM_TO_MPS;
+    encoder_data.lb = - encoder_get_count(ENCODER_QUAD_lb) / CONTROL_DT * RPM_TO_MPS;
     encoder_data.lb = Kalman_Update(&K_lb, encoder_data.lb);
     encoder_clear_count(ENCODER_QUAD_lb);
 
