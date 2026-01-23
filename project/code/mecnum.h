@@ -14,11 +14,11 @@
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f   
 
-#define KP 50.0f
-#define KI 10.0f
+#define KP 240.0f
+#define KI 120.0f
 #define KD 0.0f
-#define MAX_I 10.0f
-#define OUT_MAX 20.0f
+#define MAX_I 30.0f
+#define OUT_MAX 60.0f
 // ================== 硬件引脚定义 ==================
 // 电机 PWM 通道定义
 #define MOTOR_LF_PWM    TCPWM_CH14_P00_2    // 左前 PWM
