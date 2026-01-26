@@ -2,7 +2,7 @@
 
 #include "zf_common_headfile.h"
 
-float KP=3500.0f,KI=50000.0f,KD=0.0f,MAX_I=0.2f;
+float KP=3500.0f,KI=20000.0f,KD=0.0f,MAX_I=0.2f;
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;
 Target_t target_vel = {0};

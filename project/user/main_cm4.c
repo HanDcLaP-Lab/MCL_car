@@ -64,17 +64,26 @@ int main(void)
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     
-    // system_delay_ms(2000);
+    system_delay_ms(2000);
     
     // Mecanum_Set_Velocity(1.0f, 0.0f, 0.0f);
     // system_delay_ms(2000);
     // Mecanum_Set_Velocity(0.0f, 1.0f, 0.0f);
-    // system_delay_ms(2000);
+    // system_delay_ms(3500);
     //Mecanum_Set_Velocity(0.0f, 0.0f, 7.0f);
     //system_delay_ms(2000);
     // Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     // system_delay_ms(1000);
     // system_delay_ms(1);
+
+    for(int i=0;i<=300;i++)
+    {
+        Mecanum_Set_Velocity(0.0f,(float)i/300.0f,0.0f);
+        system_delay_ms(10);
+    }
+    system_delay_ms(2000);
+    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+    system_delay_ms(1000);
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
@@ -104,7 +113,7 @@ int main(void)
         PID_Init(&pid_lb, KP, KI, KD, MAX_I, OUT_MAX);
         PID_Init(&pid_rb, KP, KI, KD, MAX_I, OUT_MAX);
 
-        Mecanum_Set_Velocity(0.0f, 1.0f, 0.0f);
+        //Mecanum_Set_Velocity(0.0f, 1.0f, 0.0f);
         // 此处编写需要循环执行的代码
     }
 }
