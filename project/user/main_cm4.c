@@ -70,7 +70,7 @@ int main(void)
     // system_delay_ms(2000);
     // Mecanum_Set_Velocity(0.0f, 1.0f, 0.0f);
     // system_delay_ms(3500);
-    //Mecanum_Set_Velocity(0.0f, 0.0f, 7.0f);
+    // Mecanum_Set_Velocity(0.0f, 0.0f, 7.0f);
     //system_delay_ms(2000);
     // Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     // system_delay_ms(1000);
@@ -136,9 +136,9 @@ void Wireless_Update(uint8_t ch, float val) {
         case 8:
             if(val == 1){
                 Mecanum_Stop();
-                wireless_uart_send_string("done");
-            }if(val == 0){
-                Mecanum_Unlock();
+                wire== 0){
+                Mecaless_uart_send_string("done");
+            }if(val num_Unlock();
             }
         default:
             break;
