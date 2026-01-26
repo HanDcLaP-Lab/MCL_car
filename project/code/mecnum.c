@@ -2,7 +2,7 @@
 
 #include "zf_common_headfile.h"
 
-float KP=3500.0f,KI=40000.0f,KD=0.0f,MAX_I=0.2f;
+float KP=3500.0f,KI=50000.0f,KD=0.0f,MAX_I=0.2f;
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;
 Target_t target_vel = {0};
@@ -17,11 +17,21 @@ Target_t target_vel = {0};
  */
 void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, float output) {
     int32_t duty = (int32_t)output;
-    if (duty >= 0) {
-        gpio_set_level(dir_pin, 1);
-    } else {
-        gpio_set_level(dir_pin, 0);
-        duty = -duty;
+    if (pwm_ch == MOTOR_RF_PWM || pwm_ch == MOTOR_RB_PWM ) {
+        if (duty >= 0) {
+            gpio_set_level(dir_pin, 1);
+        } else {
+            gpio_set_level(dir_pin, 0);
+            duty = -duty;
+        }
+    }
+    if(pwm_ch == MOTOR_LB_PWM || pwm_ch == MOTOR_LF_PWM){
+        if (duty >= 0) {
+            gpio_set_level(dir_pin, 0);
+        } else {
+            gpio_set_level(dir_pin, 1);
+            duty = -duty;
+        }
     }
 
     // 限幅

@@ -54,12 +54,15 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务函数
 {
     pit_isr_flag_clear(PIT_CH1);
     
-    Current_speed_display();
-    wireless_uart_send_float(pid_lf.integral);
-    //wireless_uart_send_string(" ");
-    //wireless_uart_send_float(pid_lf.prev_error);
-    //wireless_uart_send_string(" ");
-    //wireless_uart_send_float(pid_lf.max_i);
+    //Current_speed_display();
+    wireless_uart_send_float(encoder_data.lf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(encoder_data.rf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(encoder_data.lb);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(encoder_data.rb);
+    wireless_uart_send_string("\n");
     
 }
 
