@@ -16,6 +16,7 @@ typedef struct {
     // --- 运行时状态 (Runtime State) ---
     float integral;     // 积分累加值
     float prev_error;   // 上一次误差 (用于计算微分)
+    float output;       //仅作展示
 } PID_t;
 
 // =================== 函数声明 ===================

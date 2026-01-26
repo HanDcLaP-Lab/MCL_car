@@ -44,7 +44,7 @@ float PID_Calculate(PID_t *pid, float error, float dt) {
 
     // 4. 总输出计算
     float output = p_out + i_out + d_out;
-
+    pid->output = output;
     // 5. 输出限幅
     if (output > pid->out_max) {
         output = pid->out_max;

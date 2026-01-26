@@ -104,6 +104,7 @@
 #include "pid.h"
 #include "encoder.h"
 #include "mecnum.h"
+#include "wireless_uart.h"
 //=====================================================组件应用层=====================================================
 #include "seekfree_assistant.h"
 #include "seekfree_assistant_interface.h"

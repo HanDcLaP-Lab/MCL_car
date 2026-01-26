@@ -52,22 +52,38 @@ int main(void)
     debug_init();                       // 调试串口初始化
     // 此处编写用户代码 例如外设初始化代码等
 
-    printf("a");
+    
     Encoder_Init();
     Mecanum_Init();
+    wireless_uart_init_();
     pit_ms_init(PIT_CH0, 1);
-    Mecanum_Set_Velocity(0.2f, 0.0f, 0.0f);
-
+    pit_ms_init(PIT_CH1, 25);
+    
+    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+    
+    system_delay_ms(2000);
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
         // 此处编写需要循环执行的代码
-        
-        //Current_speed_display();
-        Current_speed_display();
-        system_delay_ms(500);
-        
 
+        Mecanum_Set_Velocity(1.5f, 0.0f, 0.0f);
+        system_delay_ms(2000);
+        Mecanum_Set_Velocity(1.0f, 0.0f, 0.0f);
+        system_delay_ms(2000);
+        Mecanum_Set_Velocity(-1.0f, 0.0f, 0.0f);
+        system_delay_ms(2000);
+        Mecanum_Set_Velocity(0.0f, 1.5f, 0.0f);
+        system_delay_ms(2000);
+        Mecanum_Set_Velocity(0.0f, 0.0f, 7.0f);
+        system_delay_ms(2000);
+        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+        system_delay_ms(1000);
+        system_delay_ms(1);
+        PID_Init(&pid_lf, KP, KI, KD, MAX_I, OUT_MAX);
+        PID_Init(&pid_rf, KP, KI, KD, MAX_I, OUT_MAX);
+        PID_Init(&pid_lb, KP, KI, KD, MAX_I, OUT_MAX);
+        PID_Init(&pid_rb, KP, KI, KD, MAX_I, OUT_MAX);
 
         // 此处编写需要循环执行的代码
     }

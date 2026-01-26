@@ -2,6 +2,7 @@
 
 #include "zf_common_headfile.h"
 
+float KP=3500.0f,KI=40000.0f,KD=0.0f,MAX_I=0.2f;
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;
 Target_t target_vel = {0};
@@ -14,23 +15,13 @@ Target_t target_vel = {0};
  * @param dir_pin: 方向引脚
  * @param output: PID计算出的输出值 (正负代表方向)
  */
-static void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, float output) {
+void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, float output) {
     int32_t duty = (int32_t)output;
-    if (pwm_ch == MOTOR_RF_PWM || pwm_ch == MOTOR_RB_PWM ) {
-        if (duty >= 0) {
-            gpio_set_level(dir_pin, 1);
-        } else {
-            gpio_set_level(dir_pin, 0);
-            duty = -duty;
-        }
-    }
-    if(pwm_ch == MOTOR_LB_PWM || pwm_ch == MOTOR_LF_PWM){
-        if (duty >= 0) {
-            gpio_set_level(dir_pin, 0);
-        } else {
-            gpio_set_level(dir_pin, 1);
-            duty = -duty;
-        }
+    if (duty >= 0) {
+        gpio_set_level(dir_pin, 1);
+    } else {
+        gpio_set_level(dir_pin, 0);
+        duty = -duty;
     }
 
     // 限幅
@@ -41,7 +32,7 @@ static void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, flo
 
 // ================== 接口函数实现 ==================
 
-void Mecanum_Set_Velocity(float vx, float vy, float wz) {
+void Mecanum_Set_Velocity(float vx, float vy, float wz){
     target_vel.vx = vx;
     target_vel.vy = vy;
     target_vel.wz = wz;
@@ -109,10 +100,10 @@ void Mecanum_Control_Loop(void) {
     target_v_rb = target_vel.vx - target_vel.vy + center_v;
 
     // 3. PID 计算
-    out_lf = 100 * PID_Calculate(&pid_lf, target_v_lf - encoder_data.lf, CONTROL_DT);
-    out_rf = 100 * PID_Calculate(&pid_rf, target_v_rf - encoder_data.rf, CONTROL_DT);
-    out_lb = 100 * PID_Calculate(&pid_lb, target_v_lb - encoder_data.lb, CONTROL_DT);
-    out_rb = 100 * PID_Calculate(&pid_rb, target_v_rb - encoder_data.rb, CONTROL_DT);
+    out_lf = PID_Calculate(&pid_lf, target_v_lf - encoder_data.lf, CONTROL_DT);
+    out_rf = PID_Calculate(&pid_rf, target_v_rf - encoder_data.rf, CONTROL_DT);
+    out_lb = PID_Calculate(&pid_lb, target_v_lb - encoder_data.lb, CONTROL_DT);
+    out_rb = PID_Calculate(&pid_rb, target_v_rb - encoder_data.rb, CONTROL_DT);
 
     // 4. 执行电机控制
     if (target_vel.unlock == true) {
@@ -124,7 +115,8 @@ void Mecanum_Control_Loop(void) {
 }
 // 为方便显示，取mm/s
 void Current_speed_display(void) {
-    printf("%d\r\n", (int16_t)(1000 * encoder_data.lb));
+    printf("%d,%d,%d,%d\n", (int16_t)(1000 * encoder_data.lf), (int16_t)(1000 * encoder_data.rf),
+                             (int16_t)(1000 * encoder_data.lb), (int16_t)(1000 * encoder_data.rb));
     // printf("%d\r\n", (int16_t)(1000 * encoder_data.lb));
     // printf("%d\r\n", (int16_t)(1000 * encoder_data.rf));
     // printf("%d\r\n", (int16_t)(1000 * encoder_data.rb));

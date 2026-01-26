@@ -14,11 +14,8 @@
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f   
 
-#define KP 240.0f
-#define KI 120.0f
-#define KD 0.0f
-#define MAX_I 30.0f
-#define OUT_MAX 60.0f
+
+#define OUT_MAX 7000.0f
 // ================== 硬件引脚定义 ==================
 // 电机 PWM 通道定义
 #define MOTOR_LF_PWM    TCPWM_CH14_P00_2    // 左前 PWM
@@ -42,11 +39,13 @@ typedef struct {
 } Target_t;
 
 // ================== 函数声明 ==================
-
+void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, float output);
 /**
  * @brief 初始化麦轮底盘 (GPIO, PWM, PID)
  */
 void Mecanum_Init(void);
+extern PID_t pid_lf, pid_rf, pid_lb, pid_rb;
+extern float KP,KI,KD,MAX_I;
 
 /**
  * @brief 设置底盘目标速度
