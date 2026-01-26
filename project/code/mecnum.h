@@ -64,6 +64,7 @@ void Mecanum_Control_Loop(void);
  * @brief 停止所有电机
  */
 void Mecanum_Stop(void);
+void Mecanum_Unlock(void);
 
 void Current_speed_display(void);
 

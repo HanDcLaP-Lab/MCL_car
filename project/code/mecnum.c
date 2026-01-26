@@ -91,6 +91,22 @@ void Mecanum_Stop(void) {
     PID_Reset(&pid_rb);
 }
 
+void Mecanum_Unlock(void) {
+    target_vel.unlock = true;
+
+    Mecanum_Set_Velocity(0, 0, 0);
+    pwm_set_duty(MOTOR_LF_PWM, 0);
+    pwm_set_duty(MOTOR_RF_PWM, 0);
+    pwm_set_duty(MOTOR_LB_PWM, 0);
+    pwm_set_duty(MOTOR_RB_PWM, 0);
+
+    // 重置 PID 积分项
+    PID_Reset(&pid_lf);
+    PID_Reset(&pid_rf);
+    PID_Reset(&pid_lb);
+    PID_Reset(&pid_rb);
+}
+
 void Mecanum_Control_Loop(void) {
     float target_v_lf, target_v_rf, target_v_lb, target_v_rb;
     float out_lf, out_rf, out_lb, out_rb;
