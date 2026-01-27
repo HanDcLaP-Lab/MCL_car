@@ -4,6 +4,16 @@
 #include <math.h>
 
 /**
+ * @brief 麦克纳姆轮测试程序0
+ * 停止
+ */
+void test_program_0(void)
+{
+    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+    system_delay_ms(1000);
+}
+
+/**
  * @brief 麦克纳姆轮测试程序1
  * 前进0.5m/s持续2s
  */
@@ -11,8 +21,6 @@ void test_program_1(void)
 {
     Mecanum_Set_Velocity(0.5f, 0.0f, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -23,8 +31,6 @@ void test_program_1(void)
 {
     Mecanum_Set_Velocity(0.0f, 0.5f, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -35,8 +41,6 @@ void test_program_3(void)
 {
     Mecanum_Set_Velocity(-0.5f, 0.0f, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -47,8 +51,6 @@ void test_program_3(void)
 {
     Mecanum_Set_Velocity(0.0f, -0.5f, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -59,8 +61,6 @@ void test_program_5(void)
 {
     Mecanum_Set_Velocity(0.0f, 0.0f, 3.0f);
     system_delay_ms(5000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -71,8 +71,6 @@ void test_program_6(void)
 {
     Mecanum_Set_Velocity(0.0f, 0.0f, -3.0f);
     system_delay_ms(5000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -86,8 +84,6 @@ void test_program_7(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -101,8 +97,6 @@ void test_program_8(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -116,8 +110,6 @@ void test_program_9(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -131,8 +123,6 @@ void test_program_9(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -146,8 +136,6 @@ void test_program_11(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -161,8 +149,6 @@ void test_program_11(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -176,8 +162,6 @@ void test_program_11(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -191,8 +175,6 @@ void test_program_11(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -206,8 +188,6 @@ void test_program_11(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -221,8 +201,6 @@ void test_program_11(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -236,8 +214,6 @@ void test_program_11(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
 
 /**
@@ -251,6 +227,4 @@ void test_program_11(void)
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
     system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
 }
