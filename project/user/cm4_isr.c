@@ -44,7 +44,8 @@ void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务函数
     tsl1401_collect_pit_handler(); ///逐飞库空例程自带，意义不明
     
     cnt++;
-    //if(cnt == 4000) Mecanum_Set_Velocity(- 0.2f, 0.0f, 0.0f);
+    IMU_Car_Update_Loop();
+
     Mecanum_Control_Loop();
       
     
@@ -55,14 +56,7 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务函数
     pit_isr_flag_clear(PIT_CH1);
     
     //Current_speed_display();
-    wireless_uart_send_float(encoder_data.lf);
-    wireless_uart_send_string(",");
-    wireless_uart_send_float(encoder_data.rf);
-    wireless_uart_send_string(",");
-    wireless_uart_send_float(encoder_data.lb);
-    wireless_uart_send_string(",");
-    wireless_uart_send_float(encoder_data.rb);
-    wireless_uart_send_string("\n");
+    wireless_uart_output_pid();
     
 }
 

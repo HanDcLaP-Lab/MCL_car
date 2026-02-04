@@ -19,8 +19,13 @@ void test_program_0(void)
  */
 void test_program_1(void)
 {
-    Mecanum_Set_Velocity(0.5f, 0.0f, 0.0f);
-    system_delay_ms(2000);
+    Mecanum_Unlock();
+    Mecanum_Set_Velocity(1.0f, 0.0f, 0.0f);
+    system_delay_ms(3000);
+    Mecanum_Set_Velocity(0.0f, 0.7f, 0.0f);
+    system_delay_ms(3000);
+    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+    system_delay_ms(3000);
 }
 
 /**
@@ -79,7 +84,7 @@ void test_program_6(void)
  */
 void test_program_7(void)
 {
-    float angle_rad = 45.0f * M_PI / 180.0f;
+    float angle_rad = 45.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -92,7 +97,7 @@ void test_program_7(void)
  */
 void test_program_8(void)
 {
-    float angle_rad = 315.0f * M_PI / 180.0f;
+    float angle_rad = 315.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -105,7 +110,7 @@ void test_program_8(void)
  */
 void test_program_9(void)
 {
-    float angle_rad = 135.0f * M_PI / 180.0f;
+    float angle_rad = 135.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -118,7 +123,7 @@ void test_program_9(void)
  */
  void test_program_10(void)
 { 
-    float angle_rad = 225.0f * M_PI / 180.0f;
+    float angle_rad = 225.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -131,7 +136,7 @@ void test_program_9(void)
  */
 void test_program_11(void)
 {
-    float angle_rad = 30.0f * M_PI / 180.0f;
+    float angle_rad = 30.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -144,7 +149,7 @@ void test_program_11(void)
  */
  void test_program_12(void)
 { 
-    float angle_rad = 60.0f * M_PI / 180.0f;
+    float angle_rad = 60.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -157,7 +162,7 @@ void test_program_11(void)
  */
  void test_program_13(void)
 { 
-    float angle_rad = 120.0f * M_PI / 180.0f;
+    float angle_rad = 120.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -170,7 +175,7 @@ void test_program_11(void)
  */
  void test_program_14(void)
 { 
-    float angle_rad = 150.0f * M_PI / 180.0f;
+    float angle_rad = 150.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -183,7 +188,7 @@ void test_program_11(void)
  */
  void test_program_15(void)
 { 
-    float angle_rad = 210.0f * M_PI / 180.0f;
+    float angle_rad = 210.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -196,7 +201,7 @@ void test_program_11(void)
  */
  void test_program_16(void)
 { 
-    float angle_rad = 240.0f * M_PI / 180.0f;
+    float angle_rad = 240.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -209,7 +214,7 @@ void test_program_11(void)
  */
  void test_program_17(void)
 { 
-    float angle_rad = 300.0f * M_PI / 180.0f;
+    float angle_rad = 300.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);
@@ -222,7 +227,7 @@ void test_program_11(void)
  */
  void test_program_18(void)
 { 
-    float angle_rad = 330.0f * M_PI / 180.0f;
+    float angle_rad = 330.0f * PI / 180.0f;
     float vx = 0.5f * cosf(angle_rad);
     float vy = 0.5f * sinf(angle_rad);
     Mecanum_Set_Velocity(vx, vy, 0.0f);

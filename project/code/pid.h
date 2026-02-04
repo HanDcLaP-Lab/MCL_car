@@ -16,6 +16,7 @@ typedef struct {
     // --- 运行时状态 (Runtime State) ---
     float integral;     // 积分累加值
     float prev_error;   // 上一次误差 (用于计算微分)
+    float prev_prev_error; // [新增] 上上次误差 (用于增量式PID)
     float output;       //仅作展示
 } PID_t;
 
@@ -44,5 +45,14 @@ void PID_Reset(PID_t *pid);
  * @return: PID 计算出的控制量
  */
 float PID_Calculate(PID_t *pid, float error, float dt);
+
+/**
+ * 计算 增量式 PID 输出 (推荐用于电机速度环)
+ * @param pid: 指向 PID 结构体的指针
+ * @param error: 当前误差
+ * @param dt: 控制周期
+ * @return: PID 计算出的控制量 (PWM)
+ */
+float PID_Calculate_Incremental(PID_t *pid, float error, float dt);
 
 #endif

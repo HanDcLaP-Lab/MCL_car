@@ -1,8 +1,8 @@
 #include "zf_common_headfile.h"
 
 uint8 data_buffer[32];
-char buf[16];
 uint8 data_len;
+
 void wireless_uart_init_(){
     
     if(wireless_uart_init())                                                    // 判断是否通过初始化
@@ -32,11 +32,41 @@ void wireless_uart_get_(){
 }
 void wireless_uart_send_int(int32_t send_a)
 {
+    char buf[16];
     snprintf(buf, sizeof(buf), "%d", send_a);
     wireless_uart_send_string(buf);
 }
 void wireless_uart_send_float(float send_a)
 {
+    char buf[16];
     snprintf(buf, sizeof(buf), "%.2f",send_a);
     wireless_uart_send_string(buf);
+}
+
+void wireless_uart_output_motor(void){
+    wireless_uart_send_float(imu_car_data.yaw);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(target_vel.wz);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(motor_output.lf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(motor_output.rf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(motor_output.lb);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(motor_output.rb);
+    wireless_uart_send_string("\n");
+}
+
+void wireless_uart_output_pid(void){
+    wireless_uart_send_float(target_vel.vx);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(encoder_data.lf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(target_vel.wz);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(pid_lf.output);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(imu_car_data.yaw); // 增量式PID积分项无意义，改为显示Yaw角
+    wireless_uart_send_string("\n");
 }

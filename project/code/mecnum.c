@@ -2,10 +2,19 @@
 
 #include "zf_common_headfile.h"
 
-float KP=3500.0f,KI=20000.0f,KD=0.0f,MAX_I=0.2f;
+// [参数调整] 针对增量式PID (dt=0.001s) 的调优参数
+// KP=3500: 0.5m/s 误差时提供 1750 的基础PWM，确保启动有力
+// KI=3000: 0.5m/s 误差时每秒增加 1500 PWM (3000*0.5*0.001*1000)，消除静差只需约0.5-1秒
+// KD=0: 速度环通常不需要微分项，除非超调严重
+float KP=1200.0f, KI=4500.0f, KD=0.0f, MAX_I=3500.0f;
+
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;
+PID_t pid_yaw_hold;
+// [参数调整] 
+float YAW_KP=0.035f, YAW_KI=0.0f, YAW_KD=0.002f, YAW_MAX_I=1.0f, YAW_OUT_MAX=3.0f;
 Target_t target_vel = {0};
+Motor_Output_t motor_output = {0};
 
 // ================== 内部辅助函数 ==================
 
@@ -67,6 +76,7 @@ void Mecanum_Init(void) {
     PID_Init(&pid_rf, KP, KI, KD, MAX_I, OUT_MAX);
     PID_Init(&pid_lb, KP, KI, KD, MAX_I, OUT_MAX);
     PID_Init(&pid_rb, KP, KI, KD, MAX_I, OUT_MAX);
+    PID_Init(&pid_yaw_hold, YAW_KP, YAW_KI, YAW_KD, YAW_MAX_I, YAW_OUT_MAX);
 
     // 4. 初始化目标值
     target_vel.vx = 0;
@@ -89,6 +99,10 @@ void Mecanum_Stop(void) {
     PID_Reset(&pid_rf);
     PID_Reset(&pid_lb);
     PID_Reset(&pid_rb);
+    PID_Reset(&pid_yaw_hold);
+
+    motor_output.lf = 0; motor_output.rf = 0;
+    motor_output.lb = 0; motor_output.rb = 0;
 }
 
 void Mecanum_Unlock(void) {
@@ -105,16 +119,32 @@ void Mecanum_Unlock(void) {
     PID_Reset(&pid_rf);
     PID_Reset(&pid_lb);
     PID_Reset(&pid_rb);
+    PID_Reset(&pid_yaw_hold);
 }
 
 void Mecanum_Control_Loop(void) {
     float target_v_lf, target_v_rf, target_v_lb, target_v_rb;
-    float out_lf, out_rf, out_lb, out_rb;
 
     // 1. 获取反馈速度
     Encoder_GetCount();
 
-    // 2. 运动学逆解算 (Inverse Kinematics)
+    // [新增] 初始校准保护：如果IMU未校准完成，强制停止电机并重置PID
+    if (imu_car_data.is_calibrated == 0) {
+        Mecanum_Stop();
+        return;
+    }
+
+    // 2. Yaw角闭环控制 (维持 Yaw = 0)
+    if (target_vel.unlock) {
+        float yaw_error = 0.0f - imu_car_data.yaw;
+        // 处理角度跳变 (-180 ~ 180)
+        if (yaw_error > 180.0f) yaw_error -= 360.0f;
+        else if (yaw_error < -180.0f) yaw_error += 360.0f;
+        
+        target_vel.wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);
+    }
+
+    // 3. 运动学逆解算 (Inverse Kinematics)
     // 根据车身坐标系 V_x, V_y, Omega 计算四个轮子的线速度
     // 注意：这里的正负号取决于电机安装方向和轮子类型 (A/B轮布局)
     // 典型布局：左前/右后为A轮，右前/左后为B轮
@@ -125,18 +155,39 @@ void Mecanum_Control_Loop(void) {
     target_v_lb = target_vel.vx + target_vel.vy - center_v;
     target_v_rb = target_vel.vx - target_vel.vy + center_v;
 
+    // [新增] 简单的误差死区处理，防止静止时电机抖动
+    // 0.055 是 1ms 下 3200线编码器的最小分辨率
+    float err_lf = target_v_lf - encoder_data.lf;
+    float err_rf = target_v_rf - encoder_data.rf;
+    float err_lb = target_v_lb - encoder_data.lb;
+    float err_rb = target_v_rb - encoder_data.rb;
+
+    // [修正] 误差死区仅在目标速度为0时启用，防止运动中输出被锁死在当前值
+    // 如果在运动中强制 err=0，增量式PID会保持当前的高PWM输出，导致无法减速
+    if (fabsf(target_v_lf) < 0.01f && fabsf(err_lf) < 0.03f) err_lf = 0;
+    if (fabsf(target_v_rf) < 0.01f && fabsf(err_rf) < 0.03f) err_rf = 0;
+    if (fabsf(target_v_lb) < 0.01f && fabsf(err_lb) < 0.03f) err_lb = 0;
+    if (fabsf(target_v_rb) < 0.01f && fabsf(err_rb) < 0.03f) err_rb = 0;
+
     // 3. PID 计算
-    out_lf = PID_Calculate(&pid_lf, target_v_lf - encoder_data.lf, CONTROL_DT);
-    out_rf = PID_Calculate(&pid_rf, target_v_rf - encoder_data.rf, CONTROL_DT);
-    out_lb = PID_Calculate(&pid_lb, target_v_lb - encoder_data.lb, CONTROL_DT);
-    out_rb = PID_Calculate(&pid_rb, target_v_rb - encoder_data.rb, CONTROL_DT);
+    if (target_vel.unlock) {
+        motor_output.lf = PID_Calculate_Incremental(&pid_lf, err_lf, CONTROL_DT);
+        motor_output.rf = PID_Calculate_Incremental(&pid_rf, err_rf, CONTROL_DT);
+        motor_output.lb = PID_Calculate_Incremental(&pid_lb, err_lb, CONTROL_DT);
+        motor_output.rb = PID_Calculate_Incremental(&pid_rb, err_rb, CONTROL_DT);
+    } else {
+        motor_output.lf = 0;
+        motor_output.rf = 0;
+        motor_output.lb = 0;
+        motor_output.rb = 0;
+    }
 
     // 4. 执行电机控制
     if (target_vel.unlock == true) {
-        Motor_Set_Output(MOTOR_LF_PWM, MOTOR_LF_DIR, out_lf);
-        Motor_Set_Output(MOTOR_RF_PWM, MOTOR_RF_DIR, out_rf);
-        Motor_Set_Output(MOTOR_LB_PWM, MOTOR_LB_DIR, out_lb);
-        Motor_Set_Output(MOTOR_RB_PWM, MOTOR_RB_DIR, out_rb);
+        Motor_Set_Output(MOTOR_LF_PWM, MOTOR_LF_DIR, motor_output.lf);
+        Motor_Set_Output(MOTOR_RF_PWM, MOTOR_RF_DIR, motor_output.rf);
+        Motor_Set_Output(MOTOR_LB_PWM, MOTOR_LB_DIR, motor_output.lb);
+        Motor_Set_Output(MOTOR_RB_PWM, MOTOR_RB_DIR, motor_output.rb);
     }
 }
 // 为方便显示，取mm/s

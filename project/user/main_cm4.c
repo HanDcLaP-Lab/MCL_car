@@ -53,43 +53,27 @@ int main(void)
     debug_init();                       // 调试串口初始化
     // 此处编写用户代码 例如外设初始化代码等
 
-    
+    IMU_Car_Init();
     Encoder_Init();
     Mecanum_Init();
     wireless_uart_init_();
-    seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
-    pit_ms_init(PIT_CH0, 1);
-    pit_ms_init(PIT_CH1, 25);
+    //seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
+    
+    pit_ms_init(PIT_CH1, 400);
     pit_ms_init(PIT_CH2, 2000);
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    
-    system_delay_ms(2000);
-    
-    // Mecanum_Set_Velocity(1.0f, 0.0f, 0.0f);
-    // system_delay_ms(2000);
-    // Mecanum_Set_Velocity(0.0f, 1.0f, 0.0f);
-    // system_delay_ms(3500);
-    // Mecanum_Set_Velocity(0.0f, 0.0f, 7.0f);
-    //system_delay_ms(2000);
-    // Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    // system_delay_ms(1000);
-    // system_delay_ms(1);
+    pit_ms_init(PIT_CH0, 1);
+    system_delay_ms(3000);
 
-    for(int i=0;i<=300;i++)
-    {
-        Mecanum_Set_Velocity(0.0f,(float)i/300.0f,0.0f);
-        system_delay_ms(10);
-    }
-    system_delay_ms(2000);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
+    test_program_1();
+    
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
         // 此处编写需要循环执行的代码
 
-        seekfree_assistant_data_analysis();
+        //seekfree_assistant_data_analysis();
 
         // 2. 检查是否有参数更新 (遍历所有通道)
         for (int i = 0; i < SEEKFREE_ASSISTANT_SET_PARAMETR_COUNT; i++) {
@@ -108,12 +92,13 @@ int main(void)
         }
 
         system_delay_ms(10); // 稍微延时
-        PID_Init(&pid_lf, KP, KI, KD, MAX_I, OUT_MAX);
-        PID_Init(&pid_rf, KP, KI, KD, MAX_I, OUT_MAX);
-        PID_Init(&pid_lb, KP, KI, KD, MAX_I, OUT_MAX);
-        PID_Init(&pid_rb, KP, KI, KD, MAX_I, OUT_MAX);
-
-        //Mecanum_Set_Velocity(0.0f, 1.0f, 0.0f);
+        
+        pid_lf.kp = KP; pid_lf.ki = KI; pid_lf.kd = KD; pid_lf.max_i = MAX_I;
+        pid_rf.kp = KP; pid_rf.ki = KI; pid_rf.kd = KD; pid_rf.max_i = MAX_I;
+        pid_lb.kp = KP; pid_lb.ki = KI; pid_lb.kd = KD; pid_lb.max_i = MAX_I;
+        pid_rb.kp = KP; pid_rb.ki = KI; pid_rb.kd = KD; pid_rb.max_i = MAX_I;
+        
+        
         // 此处编写需要循环执行的代码
     }
 }
@@ -135,10 +120,10 @@ void Wireless_Update(uint8_t ch, float val) {
             break;
         case 8:
             if(val == 1){
-                Mecanum_Stop();
-                wire== 0){
-                Mecaless_uart_send_string("done");
-            }if(val num_Unlock();
+              Mecanum_Stop();}
+            if(val== 0){
+                wireless_uart_send_string("done");
+                Mecanum_Unlock();
             }
         default:
             break;

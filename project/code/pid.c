@@ -10,12 +10,16 @@ void PID_Init(PID_t *pid, float kp, float ki, float kd, float max_i, float out_m
     
     pid->integral = 0.0f;
     pid->prev_error = 0.0f;
+    pid->prev_prev_error = 0.0f;
+    pid->output = 0.0f;
 }
 
 // 重置函数
 void PID_Reset(PID_t *pid) {
     pid->integral = 0.0f;
     pid->prev_error = 0.0f;
+    pid->prev_prev_error = 0.0f;
+    pid->output = 0.0f;
 }
 
 // 核心计算函数
@@ -53,4 +57,36 @@ float PID_Calculate(PID_t *pid, float error, float dt) {
     }
 
     return output;
+}
+
+// 增量式 PID 计算函数
+float PID_Calculate_Incremental(PID_t *pid, float error, float dt) {
+    // 增量式公式: Delta_U = Kp*(e(k)-e(k-1)) + Ki*e(k)*dt + Kd*(e(k)-2e(k-1)+e(k-2))/dt
+    
+    float p_term = pid->kp * (error - pid->prev_error);
+    float i_term = pid->ki * error * dt;
+    float d_term = 0.0f;
+    
+    if (dt > 0.000001f) {
+        d_term = pid->kd * (error - 2 * pid->prev_error + pid->prev_prev_error) / dt;
+    }
+
+    // 计算增量
+    float delta_output = p_term + i_term + d_term;
+
+    // 累加到输出 (Output 充当了积分器的角色)
+    pid->output += delta_output;
+
+    // 输出限幅
+    if (pid->output > pid->out_max) {
+        pid->output = pid->out_max;
+    } else if (pid->output < -pid->out_max) {
+        pid->output = -pid->out_max;
+    }
+
+    // 更新历史误差
+    pid->prev_prev_error = pid->prev_error;
+    pid->prev_error = error;
+
+    return pid->output;
 }

@@ -38,6 +38,13 @@ typedef struct {
     bool unlock;   //1解锁0上锁
 } Target_t;
 
+typedef struct {
+    float lf;
+    float rf;
+    float lb;
+    float rb;
+} Motor_Output_t;
+
 // ================== 函数声明 ==================
 void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, float output);
 /**
@@ -45,8 +52,11 @@ void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, float outp
  */
 void Mecanum_Init(void);
 extern PID_t pid_lf, pid_rf, pid_lb, pid_rb;
+extern PID_t pid_yaw_hold;
 extern float KP,KI,KD,MAX_I;
-
+extern float YAW_KP, YAW_KI, YAW_KD, YAW_MAX_I, YAW_OUT_MAX;
+extern Target_t target_vel;
+extern Motor_Output_t motor_output;
 /**
  * @brief 设置底盘目标速度
  * @param vx: 前进速度 (m/s)
