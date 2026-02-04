@@ -35,6 +35,8 @@ typedef struct {
     float vy;       // Y轴速度 (m/s)
     float wz;       // 自转角速度 (rad/s)
 
+    float v_lf,v_rf,v_lb,v_rb;
+
     bool unlock;   //1解锁0上锁
 } Target_t;
 

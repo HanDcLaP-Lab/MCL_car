@@ -6,13 +6,13 @@
 // KP=3500: 0.5m/s 误差时提供 1750 的基础PWM，确保启动有力
 // KI=3000: 0.5m/s 误差时每秒增加 1500 PWM (3000*0.5*0.001*1000)，消除静差只需约0.5-1秒
 // KD=0: 速度环通常不需要微分项，除非超调严重
-float KP=1200.0f, KI=4500.0f, KD=0.0f, MAX_I=3500.0f;
+float KP=1500.0f, KI=5400.0f, KD=0.0f, MAX_I=3500.0f;
 
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;
 PID_t pid_yaw_hold;
 // [参数调整] 
-float YAW_KP=0.035f, YAW_KI=0.0f, YAW_KD=0.002f, YAW_MAX_I=1.0f, YAW_OUT_MAX=3.0f;
+float YAW_KP=0.055f, YAW_KI=0.0f, YAW_KD=0.002f, YAW_MAX_I=1.0f, YAW_OUT_MAX=3.0f;
 Target_t target_vel = {0};
 Motor_Output_t motor_output = {0};
 
@@ -123,7 +123,6 @@ void Mecanum_Unlock(void) {
 }
 
 void Mecanum_Control_Loop(void) {
-    float target_v_lf, target_v_rf, target_v_lb, target_v_rb;
 
     // 1. 获取反馈速度
     Encoder_GetCount();
@@ -150,24 +149,24 @@ void Mecanum_Control_Loop(void) {
     // 典型布局：左前/右后为A轮，右前/左后为B轮
     float center_v = target_vel.wz * (CAR_L + CAR_W);
 
-    target_v_lf = target_vel.vx - target_vel.vy - center_v;
-    target_v_rf = target_vel.vx + target_vel.vy + center_v;
-    target_v_lb = target_vel.vx + target_vel.vy - center_v;
-    target_v_rb = target_vel.vx - target_vel.vy + center_v;
+    target_vel.v_lf = target_vel.vx - target_vel.vy + center_v;
+    target_vel.v_rf = target_vel.vx + target_vel.vy - center_v;
+    target_vel.v_lb = target_vel.vx + target_vel.vy + center_v;
+    target_vel.v_rb = target_vel.vx - target_vel.vy - center_v;
 
     // [新增] 简单的误差死区处理，防止静止时电机抖动
     // 0.055 是 1ms 下 3200线编码器的最小分辨率
-    float err_lf = target_v_lf - encoder_data.lf;
-    float err_rf = target_v_rf - encoder_data.rf;
-    float err_lb = target_v_lb - encoder_data.lb;
-    float err_rb = target_v_rb - encoder_data.rb;
+    float err_lf = target_vel.v_lf - encoder_data.lf;
+    float err_rf = target_vel.v_rf - encoder_data.rf;
+    float err_lb = target_vel.v_lb - encoder_data.lb;
+    float err_rb = target_vel.v_rb - encoder_data.rb;
 
     // [修正] 误差死区仅在目标速度为0时启用，防止运动中输出被锁死在当前值
     // 如果在运动中强制 err=0，增量式PID会保持当前的高PWM输出，导致无法减速
-    if (fabsf(target_v_lf) < 0.01f && fabsf(err_lf) < 0.03f) err_lf = 0;
-    if (fabsf(target_v_rf) < 0.01f && fabsf(err_rf) < 0.03f) err_rf = 0;
-    if (fabsf(target_v_lb) < 0.01f && fabsf(err_lb) < 0.03f) err_lb = 0;
-    if (fabsf(target_v_rb) < 0.01f && fabsf(err_rb) < 0.03f) err_rb = 0;
+    if (fabsf(target_vel.v_lf) < 0.01f && fabsf(err_lf) < 0.03f) err_lf = 0;
+    if (fabsf(target_vel.v_rf) < 0.01f && fabsf(err_rf) < 0.03f) err_rf = 0;
+    if (fabsf(target_vel.v_lb) < 0.01f && fabsf(err_lb) < 0.03f) err_lb = 0;
+    if (fabsf(target_vel.v_rb) < 0.01f && fabsf(err_rb) < 0.03f) err_rb = 0;
 
     // 3. PID 计算
     if (target_vel.unlock) {

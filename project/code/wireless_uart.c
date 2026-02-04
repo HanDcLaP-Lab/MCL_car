@@ -59,7 +59,7 @@ void wireless_uart_output_motor(void){
 }
 
 void wireless_uart_output_pid(void){
-    wireless_uart_send_float(target_vel.vx);
+    wireless_uart_send_float(target_vel.v_lf);
     wireless_uart_send_string(",");
     wireless_uart_send_float(encoder_data.lf);
     wireless_uart_send_string(",");
