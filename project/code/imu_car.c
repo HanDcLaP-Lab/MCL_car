@@ -8,9 +8,9 @@ static float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f; // 四元数
 static float exInt = 0.0f, eyInt = 0.0f, ezInt = 0.0f;   // 积分误差
 
 // 校准相关变量
-static double offset_gx = 0, offset_gy = 0, offset_gz = 0;
-static double sum_gx = 0, sum_gy = 0, sum_gz = 0;
-static double sum_ax = 0, sum_ay = 0, sum_az = 0;
+static float offset_gx = 0, offset_gy = 0, offset_gz = 0;
+static float sum_gx = 0, sum_gy = 0, sum_gz = 0;
+static float sum_ax = 0, sum_ay = 0, sum_az = 0;
 static uint16_t calib_cnt = 0;
 
 // 辅助函数：平方根倒数
