@@ -9,11 +9,11 @@
 float KP=1500.0f, KI=5400.0f, KD=0.0f, MAX_I=3500.0f;
 
 // ================== 全局变量 ==================
-PID_t pid_lf, pid_rf, pid_lb, pid_rb;
-PID_t pid_yaw_hold;
+PID_t pid_lf, pid_rf, pid_lb, pid_rb;//速度环pid
+PID_t pid_yaw_hold;//角度环pid
 // [参数调整] 
-float YAW_KP=0.055f, YAW_KI=0.0f, YAW_KD=0.002f, YAW_MAX_I=1.0f, YAW_OUT_MAX=3.0f;
-Target_t target_vel = {0};
+float YAW_KP=0.075f, YAW_KI=0.0f, YAW_KD=0.001f, YAW_MAX_I=0.01f, YAW_OUT_MAX=4.0f;
+Target_t target_vel = {0};//目标运行情况
 Motor_Output_t motor_output = {0};
 
 // ================== 内部辅助函数 ==================
@@ -149,10 +149,10 @@ void Mecanum_Control_Loop(void) {
     // 典型布局：左前/右后为A轮，右前/左后为B轮
     float center_v = target_vel.wz * (CAR_L + CAR_W);
 
-    target_vel.v_lf = target_vel.vx - target_vel.vy + center_v;
-    target_vel.v_rf = target_vel.vx + target_vel.vy - center_v;
-    target_vel.v_lb = target_vel.vx + target_vel.vy + center_v;
-    target_vel.v_rb = target_vel.vx - target_vel.vy - center_v;
+    target_vel.v_lf = target_vel.vx - target_vel.vy - center_v;
+    target_vel.v_rf = target_vel.vx + target_vel.vy + center_v;
+    target_vel.v_lb = target_vel.vx + target_vel.vy - center_v;
+    target_vel.v_rb = target_vel.vx - target_vel.vy + center_v;
 
     // [新增] 简单的误差死区处理，防止静止时电机抖动
     // 0.055 是 1ms 下 3200线编码器的最小分辨率

@@ -195,7 +195,7 @@ void IMU_Car_Update_Loop(void) {
             // 归一化四元数
             float norm = sqrtf(q0*q0 + q1*q1 + q2*q2 + q3*q3);
             q0 /= norm; q1 /= norm; q2 /= norm; q3 /= norm;
-            
+
             imu_car_data.is_calibrated = 1;
         }
         return; 

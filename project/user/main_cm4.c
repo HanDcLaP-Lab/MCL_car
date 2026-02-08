@@ -75,7 +75,7 @@ int main(void)
 
         //seekfree_assistant_data_analysis();
 
-        // 2. 检查是否有参数更新 (遍历所有通道)
+        // 2. 检查是否有参数更新 (遍历所有通道)——无线调参
         for (int i = 0; i < SEEKFREE_ASSISTANT_SET_PARAMETR_COUNT; i++) {
             // 如果第 i 个通道有数据更新标志
             if (seekfree_assistant_parameter_update_flag[i]) {

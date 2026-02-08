@@ -24,6 +24,14 @@ void PID_Reset(PID_t *pid) {
 
 // 核心计算函数
 float PID_Calculate(PID_t *pid, float error, float dt) {
+    //若接近目标状态，直接归零PID，防止疯转
+    if (fabsf(error) < 0.001f) {
+        pid->integral = 0;
+        pid->prev_error = 0;
+        pid->output = 0;
+        return 0; // 直接返回 0，不进行后续计算
+    }
+
     // 1. P项计算
     float p_out = pid->kp * error;
 
