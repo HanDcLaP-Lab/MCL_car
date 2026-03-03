@@ -3,6 +3,7 @@
 
 #include "zf_common_headfile.h"
 #include "pid.h"
+#include "image.h"
 
 // ================== 车辆物理参数定义 ==================
 // 请根据实际小车尺寸修改 (米)
@@ -13,6 +14,7 @@
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f   
+#define VISUAL_DT       0.020f
 
 
 #define OUT_MAX 7000.0f
@@ -55,6 +57,7 @@ void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, float outp
 void Mecanum_Init(void);
 extern PID_t pid_lf, pid_rf, pid_lb, pid_rb;
 extern PID_t pid_yaw_hold;
+extern PID_t pid_pos_x, pid_pos_y;
 extern float KP,KI,KD,MAX_I;
 extern float YAW_KP, YAW_KI, YAW_KD, YAW_MAX_I, YAW_OUT_MAX;
 extern Target_t target_vel;
@@ -71,6 +74,11 @@ void Mecanum_Set_Velocity(float vx, float vy, float wz);
  * @brief 底盘控制循环，建议在定时器中断中调用 (周期需与 CONTROL_DT 一致)
  */
 void Mecanum_Control_Loop(void);
+
+/**
+ * @brief 视觉控制循环，建议在定时器中断中调用 (周期需与 VISUAL_DT 一致)
+ */
+void Visual_Control_Loop(void);
 
 /**
  * @brief 停止所有电机

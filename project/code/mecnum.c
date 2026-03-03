@@ -1,6 +1,7 @@
 #include "mecnum.h"
 
 #include "zf_common_headfile.h"
+#include <math.h>
 
 // [参数调整] 针对增量式PID (dt=0.001s) 的调优参数
 // KP=3500: 0.5m/s 误差时提供 1750 的基础PWM，确保启动有力
@@ -11,6 +12,10 @@ float KP=1500.0f, KI=5400.0f, KD=0.0f, MAX_I=3500.0f;
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;//速度环pid
 PID_t pid_yaw_hold;//角度环pid
+PID_t pid_pos_x, pid_pos_y; // 位置环pid
+// [位置环参数] 1m误差对应1.5m/s速度
+float POS_KP=1.5f, POS_KI=0.0f, POS_KD=0.0f, POS_MAX_I=0.5f, POS_OUT_MAX=1.0f;
+
 // [参数调整] 
 float YAW_KP=0.075f, YAW_KI=0.0f, YAW_KD=0.001f, YAW_MAX_I=0.01f, YAW_OUT_MAX=4.0f;
 Target_t target_vel = {0};//目标运行情况
@@ -77,6 +82,8 @@ void Mecanum_Init(void) {
     PID_Init(&pid_lb, KP, KI, KD, MAX_I, OUT_MAX);
     PID_Init(&pid_rb, KP, KI, KD, MAX_I, OUT_MAX);
     PID_Init(&pid_yaw_hold, YAW_KP, YAW_KI, YAW_KD, YAW_MAX_I, YAW_OUT_MAX);
+    PID_Init(&pid_pos_x, POS_KP, POS_KI, POS_KD, POS_MAX_I, POS_OUT_MAX);
+    PID_Init(&pid_pos_y, POS_KP, POS_KI, POS_KD, POS_MAX_I, POS_OUT_MAX);
 
     // 4. 初始化目标值
     target_vel.vx = 0;
@@ -100,6 +107,8 @@ void Mecanum_Stop(void) {
     PID_Reset(&pid_lb);
     PID_Reset(&pid_rb);
     PID_Reset(&pid_yaw_hold);
+    PID_Reset(&pid_pos_x);
+    PID_Reset(&pid_pos_y);
 
     motor_output.lf = 0; motor_output.rf = 0;
     motor_output.lb = 0; motor_output.rb = 0;
@@ -120,6 +129,33 @@ void Mecanum_Unlock(void) {
     PID_Reset(&pid_lb);
     PID_Reset(&pid_rb);
     PID_Reset(&pid_yaw_hold);
+    PID_Reset(&pid_pos_x);
+    PID_Reset(&pid_pos_y);
+}
+
+void Visual_Control_Loop(void) {
+    // 视觉位置闭环 (周期 20ms)
+    if (target_vel.unlock) {
+        // --- 视觉位置控制 ---
+        float dist = 0.0f, angle = 0.0f;
+        // 调用视觉解算，传入当前小车Yaw角
+        Image_Solve(imu_car_data.yaw, &dist, &angle);
+
+        // 将极坐标误差转换为小车坐标系下的直角坐标误差
+        // angle 为目标相对于小车车头的角度 (0度为正前, 90度为正右)
+        // 转换为弧度
+        float angle_rad = angle * (float)(3.1415926f / 180.0f);
+        
+        // 小车坐标系: X轴向前(vx), Y轴向右(vy)
+        // cos(0)=1 (前), sin(0)=0
+        // cos(90)=0, sin(90)=1 (右)
+        float err_x = dist * cosf(angle_rad);
+        float err_y = dist * sinf(angle_rad);
+
+        // 位置环PID计算目标速度
+        target_vel.vx = PID_Calculate(&pid_pos_x, err_x, VISUAL_DT);
+        target_vel.vy = PID_Calculate(&pid_pos_y, err_y, VISUAL_DT);
+    }
 }
 
 void Mecanum_Control_Loop(void) {
@@ -133,8 +169,9 @@ void Mecanum_Control_Loop(void) {
         return;
     }
 
-    // 2. Yaw角闭环控制 (维持 Yaw = 0)
+    // 2. Yaw角闭环 (周期 1ms)
     if (target_vel.unlock) {
+        // --- Yaw角控制 (维持 Yaw = 0) ---
         float yaw_error = 0.0f - imu_car_data.yaw;
         // 处理角度跳变 (-180 ~ 180)
         if (yaw_error > 180.0f) yaw_error -= 360.0f;

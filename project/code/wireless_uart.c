@@ -39,7 +39,7 @@ void wireless_uart_send_int(int32_t send_a)
 void wireless_uart_send_float(float send_a)
 {
     char buf[16];
-    snprintf(buf, sizeof(buf), "%.2f",send_a);
+    snprintf(buf, sizeof(buf), "%.2f", (double)send_a);
     wireless_uart_send_string(buf);
 }
 

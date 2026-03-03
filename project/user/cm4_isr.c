@@ -35,6 +35,9 @@
 ********************************************************************************************************************/
 
 #include "zf_common_headfile.h"
+#include "mecnum.h"
+#include "imu_car.h"
+
 int32_t num = 0;
 int32_t cnt = 0;
 // **************************** PIT中断函数 ****************************
@@ -63,7 +66,7 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务�
 void pit0_ch2_isr()                     // 定时器通道 2 周期中断服务函数      
 {
     pit_isr_flag_clear(PIT_CH2);
-    
+    Visual_Control_Loop();
 }
 
 void pit0_ch10_isr()                    // 定时器通道 10 周期中断服务函数      

@@ -44,6 +44,7 @@
 // 本例程是开源库空工程 可用作移植或者测试各类内外设
 
 // **************************** 代码区域 ****************************
+float uart_data[8] = {0};
 
 void Wireless_Update(uint8_t ch, float val);
 int main(void)
@@ -60,7 +61,7 @@ int main(void)
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     
     pit_ms_init(PIT_CH1, 400);
-    pit_ms_init(PIT_CH2, 2000);
+    pit_ms_init(PIT_CH2, 20); // 视觉控制周期 20ms
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     pit_ms_init(PIT_CH0, 1);

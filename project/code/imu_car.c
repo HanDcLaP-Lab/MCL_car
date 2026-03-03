@@ -5,7 +5,7 @@ IMU_Car_Data_t imu_car_data = {0};
 
 // 内部算法变量
 static float q0 = 1.0f, q1 = 0.0f, q2 = 0.0f, q3 = 0.0f; // 四元数
-static float exInt = 0.0f, eyInt = 0.0f, ezInt = 0.0f;   // 积分误差
+static float exInt = 0.0f, eyInt = 0.0f;   // 积分误差
 
 // 校准相关变量
 static float offset_gx = 0, offset_gy = 0, offset_gz = 0;
@@ -44,7 +44,7 @@ void IMU_Car_Init(void){
 static void Mahony_Update(float gx, float gy, float gz, float ax, float ay, float az) {
     float norm;
     float vx, vy, vz;
-    float ex, ey, ez;
+    float ex, ey;
 
     // 1. 计算加速度模长
     float acc_norm = sqrtf(ax * ax + ay * ay + az * az);
@@ -83,7 +83,6 @@ static void Mahony_Update(float gx, float gy, float gz, float ax, float ay, floa
     // 5. 误差计算 (叉积)
     ex = (ay * vz - az * vy);
     ey = (az * vx - ax * vz);
-    ez = (ax * vy - ay * vx);
 
     // 6. 积分误差补偿
     if (acc_weight > 0.05f) { 
@@ -162,14 +161,14 @@ void IMU_Car_Update_Loop(void) {
         // 持续 2.5秒 (假设1ms周期)
         if (calib_cnt >= 2500) {
             // 1. 计算陀螺仪零偏
-            offset_gx = (float)(sum_gx / 2500.0);
-            offset_gy = (float)(sum_gy / 2500.0);
-            offset_gz = (float)(sum_gz / 2500.0);
+            offset_gx = (float)(sum_gx / 2500.0f);
+            offset_gy = (float)(sum_gy / 2500.0f);
+            offset_gz = (float)(sum_gz / 2500.0f);
 
             // 2. 计算平均重力向量 (用于修正安装倾角)
-            float avg_ax = (float)(sum_ax / 2500.0);
-            float avg_ay = (float)(sum_ay / 2500.0);
-            float avg_az = (float)(sum_az / 2500.0);
+            float avg_ax = (float)(sum_ax / 2500.0f);
+            float avg_ay = (float)(sum_ay / 2500.0f);
+            float avg_az = (float)(sum_az / 2500.0f);
 
             // 将原始加速度映射到算法坐标系
             float init_ax = IMU_MAP_AX(avg_ax, avg_ay, avg_az);
