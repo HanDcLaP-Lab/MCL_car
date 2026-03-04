@@ -5,28 +5,28 @@ uint8 data_len;
 
 void wireless_uart_init_(){
     
-    if(wireless_uart_init())                                                    // ÅĞ¶ÏÊÇ·ñÍ¨¹ı³õÊ¼»¯
+    if(wireless_uart_init())                                                    // åˆ¤æ–­æ˜¯å¦é€šè¿‡åˆå§‹åŒ–
     {
-        while(1)                                                                // ³õÊ¼»¯Ê§°Ü¾ÍÔÚÕâ½øÈëËÀÑ­»·
+        while(1)                                                                // åˆå§‹åŒ–å¤±è´¥å°±åœ¨è¿™è¿›å…¥æ­»å¾ªç¯
         {
-            system_delay_ms(100);                                               // ¶ÌÑÓÊ±¿ìËÙÉÁµÆ±íÊ¾Òì³£
+            system_delay_ms(100);                                               // çŸ­å»¶æ—¶å¿«é€Ÿé—ªç¯è¡¨ç¤ºå¼‚å¸¸
         }
     }
     wireless_uart_send_byte('\r');
     wireless_uart_send_byte('\n');
-    wireless_uart_send_string("SEEKFREE wireless uart demo.\r\n");              // ³õÊ¼»¯Õı³£ Êä³ö²âÊÔĞÅÏ¢
+    wireless_uart_send_string("SEEKFREE wireless uart demo.\r\n");              // åˆå§‹åŒ–æ­£å¸¸ è¾“å‡ºæµ‹è¯•ä¿¡æ¯
 }
 
 void wireless_uart_get_(){
-    data_len = (uint8)wireless_uart_read_buffer(data_buffer, 32);             // ²é¿´ÊÇ·ñÓĞÏûÏ¢ Ä¬ÈÏ»º³åÇøÊÇ WIRELESS_UART_BUFFER_SIZE ×Ü¹² 64 ×Ö½Ú
-        if(data_len != 0)                                                       // ÊÕµ½ÁËÏûÏ¢ ¶ÁÈ¡º¯Êı»á·µ»ØÊµ¼Ê¶ÁÈ¡µ½µÄÊı¾İ¸öÊı
+    data_len = (uint8)wireless_uart_read_buffer(data_buffer, 32);             // æŸ¥çœ‹æ˜¯å¦æœ‰æ¶ˆæ¯ é»˜è®¤ç¼“å†²åŒºæ˜¯ WIRELESS_UART_BUFFER_SIZE æ€»å…± 64 å­—èŠ‚
+        if(data_len != 0)                                                       // æ”¶åˆ°äº†æ¶ˆæ¯ è¯»å–å‡½æ•°ä¼šè¿”å›å®é™…è¯»å–åˆ°çš„æ•°æ®ä¸ªæ•°
         {
             Mecanum_Stop();
-            wireless_uart_send_buffer(data_buffer, data_len);                     // ½«ÊÕµ½µÄÏûÏ¢·¢ËÍ»ØÈ¥
+            wireless_uart_send_buffer(data_buffer, data_len);                     // å°†æ”¶åˆ°çš„æ¶ˆæ¯å‘é€å›å»
             memset(data_buffer, 0, 32);
             func_uint_to_str((char *)data_buffer, data_len);
-            wireless_uart_send_string("\r\ndata len:");                                 // ÏÔÊ¾Êµ¼ÊÊÕµ½µÄÊı¾İĞÅÏ¢
-            wireless_uart_send_buffer(data_buffer, strlen((const char *)data_buffer));    // ÏÔÊ¾ÊÕµ½µÄÊı¾İ¸öÊı
+            wireless_uart_send_string("\r\ndata len:");                                 // æ˜¾ç¤ºå®é™…æ”¶åˆ°çš„æ•°æ®ä¿¡æ¯
+            wireless_uart_send_buffer(data_buffer, strlen((const char *)data_buffer));    // æ˜¾ç¤ºæ”¶åˆ°çš„æ•°æ®ä¸ªæ•°
             wireless_uart_send_string(".\r\n");
         }
 }
@@ -67,6 +67,6 @@ void wireless_uart_output_pid(void){
     wireless_uart_send_string(",");
     wireless_uart_send_float(pid_lf.output);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_data.yaw); // ÔöÁ¿Ê½PID»ı·ÖÏîÎŞÒâÒå£¬¸ÄÎªÏÔÊ¾Yaw½Ç
+    wireless_uart_send_float(imu_car_data.yaw); // å¢é‡å¼PIDç§¯åˆ†é¡¹æ— æ„ä¹‰ï¼Œæ”¹ä¸ºæ˜¾ç¤ºYawè§’
     wireless_uart_send_string("\n");
 }

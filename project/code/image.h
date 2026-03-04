@@ -4,8 +4,9 @@
 #include "zf_common_headfile.h"
 
 // UART接收的数据数组
-// 0: Car X, 1: Car Y, 2: Target X, 3: Target Y
-// 4: Roll, 5: Pitch, 6: Yaw, 7: Height
+// 0: Car X, 1: Car Y (无人机坐标系下的地面坐标)
+// 2: Target X, 3: Target Y (无人机坐标系下的地面坐标)
+// 4: Drone Yaw (无人机偏航角)
 extern float uart_data[8];
 
 void Image_Init(void);
