@@ -1,58 +1,112 @@
-/*********************************************************************************************************************
-* CYT2BL3 Opensourec Library 即（ CYT2BL3 开源库）是一个基于官方 SDK 接口的第三方开源库
-* Copyright (c) 2022 SEEKFREE 逐飞科技
-*
-* 本文件是 CYT2BL3 开源库的一部分
-*
-* CYT2BL3 开源库 是免费软件
-* 您可以根据自由软件基金会发布的 GPL（GNU General Public License，即 GNU通用公共许可证）的条款
-* 即 GPL 的第3版（即 GPL3.0）或（您选择的）任何后来的版本，重新发布和/或修改它
-*
-* 本开源库的发布是希望它能发挥作用，但并未对其作任何的保证
-* 甚至没有隐含的适销性或适合特定用途的保证
-* 更多细节请参见 GPL
-*
-* 您应该在收到本开源库的同时收到一份 GPL 的副本
-* 如果没有，请参阅<https://www.gnu.org/licenses/>
-*
-* 额外注明：
-* 本开源库使用 GPL3.0 开源许可证协议 以上许可申明为译文版本
-* 许可申明英文版在 libraries/doc 文件夹下的 GPL3_permission_statement.txt 文件中
-* 许可证副本在 libraries 文件夹下 即该文件夹下的 LICENSE 文件
-* 欢迎各位使用并传播本程序 但修改内容时必须保留逐飞科技的版权声明（即本声明）
-*
-* 文件名称          main_cm4
-* 公司名称          成都逐飞科技有限公司
-* 版本信息          查看 libraries/doc 文件夹内 version 文件 版本说明
-* 开发环境          IAR 9.40.1
-* 适用平台          CYT2BL3
-* 店铺链接          https://seekfree.taobao.com/
-*
-* 修改记录
-* 日期              作者                备注
-* 2024-11-19       pudding            first version
-********************************************************************************************************************/
 
 #include "zf_common_headfile.h"
 
-// 打开新的工程或者工程移动了位置务必执行以下操作
-// 第一步 关闭上面所有打开的文件
-// 第二步 project->clean  等待下方进度条走完
+// ================= ���ͨѶӲ������ =================
+// ����ʹ�� UART1 �� CM7_1 ����ͨѶ (�����ʵ�ʽ����޸����źʹ��ں�)
+#define BOARD_UART       UART_1
+#define BOARD_BAUDRATE   115200
+#define BOARD_TX_PIN     UART1_TX_P06_1
+#define BOARD_RX_PIN     UART1_RX_P06_0
 
-// 本例程是开源库空工程 可用作移植或者测试各类内外设
-// 本例程是开源库空工程 可用作移植或者测试各类内外设
-// 本例程是开源库空工程 可用作移植或者测试各类内外设
+// ================= �������� =================
+float uart_data[8] = {0}; // ��ԭ�е���������
 
-// **************************** 代码区域 ****************************
-float uart_data[8] = {0};
+uint8_t rx_buffer[512];   // ���ڽ��� FIFO ������
+fifo_struct board_rx_fifo;
+uint8_t temp_rx_dat;      // �����жϽ��յ���ʱ����
+
+// ����״̬��ö��
+typedef enum {
+    STEP_HEADER1 = 0,
+    STEP_HEADER2,
+    STEP_DATA,
+    STEP_CHECKSUM,
+    STEP_TAIL
+} RxState;
+
+// ���干�������ڽ��� 32 �ֽ� -> 8 ��      float
+typedef union {
+    float f_data[8];
+    uint8_t byte_data[32];
+} FloatPack;
+
+// ================= ״̬���������� =================
+void Parse_Board_Uart_Data(void)
+{
+    static RxState state = STEP_HEADER1;
+    static uint8_t data_idx = 0;
+    static FloatPack temp_pack;
+    static uint8_t cal_checksum = 0;
+    
+    uint8_t read_byte;
+    uint32_t len;
+
+    // �� FIFO ��������ʱ����������������
+    while (fifo_used(&board_rx_fifo) > 0) 
+    {
+        len = 1; // ������ؼ����޸�����ǿ��ָ��ֻ��ȡ 1 ���ֽڣ�
+        fifo_read_buffer(&board_rx_fifo, &read_byte, &len, FIFO_READ_AND_CLEAN);
+        
+        // ���������ʱ�������ע�ͣ������յ��������ݣ�
+        // printf("%02X ", read_byte); 
+
+        switch (state) {
+            case STEP_HEADER1:
+                if (read_byte == 0xAA) state = STEP_HEADER2; 
+                break;
+                
+            case STEP_HEADER2:
+                if (read_byte == 0x55) {                     
+                    state = STEP_DATA;
+                    data_idx = 0;
+                    cal_checksum = 0;
+                } else if (read_byte != 0xAA) {
+                    state = STEP_HEADER1;
+                }
+                break;
+                
+            case STEP_DATA:
+                temp_pack.byte_data[data_idx++] = read_byte;
+                cal_checksum += read_byte;                   
+                if (data_idx >= 32) state = STEP_CHECKSUM;
+                break;
+                
+            case STEP_CHECKSUM:
+                if (read_byte == cal_checksum) {
+                    state = STEP_TAIL;                       
+                } else {
+                    state = STEP_HEADER1;                    
+                    printf("\r\n[ERR] Checksum Fail! Cal:%02X, Rx:%02X\r\n", cal_checksum, read_byte);
+                }
+                break;
+                
+            case STEP_TAIL:
+                if (read_byte == 0x7F) {                     
+                    // У����ȫͨ��
+                    for (int i = 0; i < 8; i++) {
+                        uart_data[i] = temp_pack.f_data[i];
+                    }
+                    printf("\r\n[5] SUCCESS! float[0]:%.2f, float[1]:%.2f\r\n", uart_data[0], uart_data[1]);
+                } else {
+                    printf("\r\n[ERR] Tail Fail! Expected:7F, Rx:%02X\r\n", read_byte);
+                }
+                state = STEP_HEADER1; 
+                break;
+        }
+    }
+}
 
 void Wireless_Update(uint8_t ch, float val);
+
 int main(void)
 {
-    clock_init(SYSTEM_CLOCK_160M);      // 时钟配置及系统初始化<务必保留>
-    
-    debug_init();                       // 调试串口初始化
-    // 此处编写用户代码 例如外设初始化代码等
+    clock_init(SYSTEM_CLOCK_160M);      
+    debug_init();                       
+
+    // --- 1. ��ʼ�����ͨѶ�� FIFO �� UART ---
+    fifo_init(&board_rx_fifo, FIFO_DATA_8BIT, rx_buffer, 512);
+    uart_init(BOARD_UART, BOARD_BAUDRATE, BOARD_TX_PIN, BOARD_RX_PIN);
+    uart_rx_interrupt(BOARD_UART, 1); // ���������ж�
 
     IMU_Car_Init();
     Encoder_Init();
@@ -61,50 +115,46 @@ int main(void)
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     
     pit_ms_init(PIT_CH1, 400);
-    pit_ms_init(PIT_CH2, 20); // 视觉控制周期 20ms
-    
+    pit_ms_init(PIT_CH2, 20); 
+    printf("INIT");
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     pit_ms_init(PIT_CH0, 1);
     system_delay_ms(3000);
 
     test_program_1();
     
-    // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
-        // 此处编写需要循环执行的代码
+        // --- 2. ����ѭ���в��ϵ������ݽ������� ---
+        static uint32_t print_cnt = 0;
+        if(print_cnt++ % 100 == 0) {
+            printf("."); 
+        }
+        Parse_Board_Uart_Data();
 
         seekfree_assistant_data_analysis();
 
-        // 2. 检查是否有参数更新 (遍历所有通道)——无线调参
         for (int i = 0; i < SEEKFREE_ASSISTANT_SET_PARAMETR_COUNT; i++) {
-            // 如果第 i 个通道有数据更新标志
             if (seekfree_assistant_parameter_update_flag[i]) {
-                // 清除标志位
                 seekfree_assistant_parameter_update_flag[i] = 0;
-                
-                // 将参数应用到 PID (通道号 = 索引 + 1)
-                // seekfree_assistant_parameter[i] 是接收到的浮点数值
                 Wireless_Update(i + 1, seekfree_assistant_parameter[i]); 
-                
-                // 可选：通过无线串口回传确认，告诉上位机收到并更新了
                 wireless_uart_send_string("Param Updated\r\n");
             }
         }
 
-        system_delay_ms(10); // 稍微延时
+        system_delay_ms(10); 
         
         pid_lf.kp = KP; pid_lf.ki = KI; pid_lf.kd = KD; pid_lf.max_i = MAX_I;
         pid_rf.kp = KP; pid_rf.ki = KI; pid_rf.kd = KD; pid_rf.max_i = MAX_I;
         pid_lb.kp = KP; pid_lb.ki = KI; pid_lb.kd = KD; pid_lb.max_i = MAX_I;
         pid_rb.kp = KP; pid_rb.ki = KI; pid_rb.kd = KD; pid_rb.max_i = MAX_I;
-        
-        
-        // 此处编写需要循环执行的代码
     }
 }
 
-// **************************** 代码区域 ****************************
+
+
+
+
 void Wireless_Update(uint8_t ch, float val) {
     switch (ch) {
         case 1:

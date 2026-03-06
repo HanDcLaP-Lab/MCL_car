@@ -40,8 +40,6 @@
 
 int32_t num = 0;
 int32_t cnt = 0;
-extern fifo_struct board_rx_fifo;
-extern uint8_t temp_rx_dat;
 // **************************** PIT�?�?函数 ****************************
 void pit0_ch0_isr()                     // 定时器通道 0 周期�?�?服务函数      
 {
@@ -59,7 +57,9 @@ void pit0_ch0_isr()                     // 定时器通道 0 周期�?�?服务�
 void pit0_ch1_isr()                     // 定时器通道 1 周期�?�?服务函数      
 {
     pit_isr_flag_clear(PIT_CH1);
-    
+    //wireless_uart_send_float(recv_pack.f_data[4]);
+    // wireless_uart_send_float(recv_pack.f_data[1]);
+    // wireless_uart_send_float(recv_pack.f_data[2]);
     //Current_speed_display();
     //wireless_uart_output_pid();
     
@@ -68,6 +68,7 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期�?�?服务�
 void pit0_ch2_isr()                     // 定时器通道 2 周期�?�?服务函数      
 {
     pit_isr_flag_clear(PIT_CH2);
+    remote_uart_loop();
     Visual_Control_Loop();
 }
 
@@ -170,11 +171,8 @@ void uart1_isr (void)
     if(uart_isr_mask(UART_1))            // 串口1接收�?�?
     {
         
-        if(uart_query_byte(UART_1, &temp_rx_dat))
-        {
-            fifo_write_buffer(&board_rx_fifo, &temp_rx_dat, 1);
-        }
-      
+        
+      my_uart1_handler();
       
     }
     else                                // 串口1发送中�?
