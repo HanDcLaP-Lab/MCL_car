@@ -107,6 +107,7 @@
 #include "wireless_uart.h"
 #include "test.h"
 #include "image.h"
+#include "board_comm.h"
 //=====================================================组件应用层=====================================================
 #include "seekfree_assistant.h"
 #include "seekfree_assistant_interface.h"
