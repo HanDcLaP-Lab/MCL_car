@@ -59,3 +59,9 @@ uart接收部分的代码暂未写
 | 5 | imu_data.pitch | IMU：俯仰角 (Pitch)，来自 Core 0 共享数据 |
 | 6 | imu_data.yaw | IMU：偏航角 (Yaw)，来自 Core 0 共享数据 |
 | 7 | imu_data.z | IMU：Z 轴位置 (高度)，来自 Core 0 共享数据 |
+
+3.8a
+修改部分文件命名，整理视觉方向旋转相关内容  
+
+3.8b  
+imu位置更新，姿态角映射相应更改  

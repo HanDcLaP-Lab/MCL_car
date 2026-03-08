@@ -14,19 +14,21 @@
 #define VALID_G_MIN 0.3f     // 陀螺仪死区 (小车静止时通常比无人机稳，可设小)
 
 // ================= 坐标系映射宏定义 =================
-// 目标: 车体坐标系 (X前, Y左, Z上) 
-// 请务必根据实际安装方向修改以下宏！
+// 目标: 车体坐标系 (X前, Y右, Z下) - 符合右手定则
+// 传感器安装: X向前, Y向右, Z向下
 
 // 陀螺仪映射 (机体角速度)
-#define IMU_MAP_GX(x, y, z)  (-x)
-#define IMU_MAP_GY(x, y, z)  (-y)
-#define IMU_MAP_GZ(x, y, z)  (-z)
+// 目标Z向下，顺时针旋转为正。传感器Z向下，顺时针旋转读数为正，故GZ不取反。
+#define IMU_MAP_GX(x, y, z)  (x)
+#define IMU_MAP_GY(x, y, z)  (y)
+#define IMU_MAP_GZ(x, y, z)  (z)
 
 // 加速度计映射 (映射到重力向量方向，即 -1 * 机体加速度)
-// Mahony算法要求: 静态平放时，Z轴分量应为正(指向地心)
+// Mahony算法要求: 静态平放时，Z轴分量应为正(指向地心，即+1g)
+// 传感器Z向下，平放读数为-1g(支撑力向上)，故需取反适配目标系(+1g)
 #define IMU_MAP_AX(x, y, z)  (x)
 #define IMU_MAP_AY(x, y, z)  (y)
-#define IMU_MAP_AZ(x, y, z)  (z)
+#define IMU_MAP_AZ(x, y, z)  (-z)
 
 #ifndef PI
 #define PI 3.1415926535f

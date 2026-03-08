@@ -3,7 +3,6 @@
 
 #include "zf_common_headfile.h"
 #include "pid.h"
-#include "image.h"
 
 // ================== 车辆物理参数定义 ==================
 // 请根据实际小车尺寸修改 (米)

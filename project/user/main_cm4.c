@@ -61,7 +61,7 @@ int main(void)
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     
-    pit_ms_init(PIT_CH1, 400);
+    pit_ms_init(PIT_CH1, 300);
     //pit_ms_init(PIT_CH2, 20); // 视觉控制周期 20ms
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
@@ -74,7 +74,7 @@ int main(void)
     for(;;)
     {
         // 此处编写需要循环执行的代码
-        Debug_Parse_Board_Uart_Data();
+        Parse_Board_Uart_Data();
 
         if (board_rx_complete_flag) {
             board_rx_complete_flag = 0;
