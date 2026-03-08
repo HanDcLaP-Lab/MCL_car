@@ -106,8 +106,8 @@
 #include "mecnum.h"
 #include "wireless_uart.h"
 #include "test.h"
-#include "image.h"
-#include "board_comm.h"
+#include "car_image.h"
+#include "car_board_comm.h"
 //=====================================================组件应用层=====================================================
 #include "seekfree_assistant.h"
 #include "seekfree_assistant_interface.h"

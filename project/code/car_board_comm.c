@@ -1,14 +1,15 @@
-#include "board_comm.h"
+#include "car_board_comm.h"
 #include "zf_common_headfile.h"
 
-// ================= ±äÁ¿¶¨Òå =================
+// ================= å˜é‡å®šä¹‰ =================
 float uart_data[8] = {0}; 
 
 uint8_t rx_buffer[512];   
+volatile uint8_t board_rx_complete_flag = 0;
 fifo_struct board_rx_fifo;
 uint8_t temp_rx_dat;      
 
-// ½ÓÊÕ×´Ì¬»úÃ¶¾Ù
+// æ¥æ”¶çŠ¶æ€æœºæšä¸¾
 typedef enum {
     STEP_HEADER1 = 0,
     STEP_HEADER2,
@@ -17,13 +18,13 @@ typedef enum {
     STEP_TAIL
 } RxState;
 
-// ¶¨Òå¹²ÓÃÌåÓÃÓÚ½âÎö
+// å®šä¹‰å…±ç”¨ä½“ç”¨äºè§£æ
 typedef union {
     float f_data[8];
     uint8_t byte_data[32];
 } FloatPack;
 
-// ================= Í¨Ñ¶³õÊ¼»¯ =================
+// ================= é€šè®¯åˆå§‹åŒ– =================
 void Board_Comm_Init(void)
 {
     fifo_init(&board_rx_fifo, FIFO_DATA_8BIT, rx_buffer, 512);
@@ -37,6 +38,7 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
     static uint8_t data_idx = 0;
     static FloatPack temp_pack;
     static uint8_t cal_checksum = 0;
+    static uint32_t rx_cnt = 0; // [æ–°å¢] æ¥æ”¶åŒ…è®¡æ•°å™¨
     
     uint8_t read_byte;
     uint32_t len;
@@ -72,7 +74,7 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                     state = STEP_TAIL;                       
                 } else {
                     state = STEP_HEADER1;                    
-                    // ½öÔÚµ÷ÊÔÄ£Ê½ÏÂ´òÓ¡±¨´í
+                    // ä»…åœ¨è°ƒè¯•æ¨¡å¼ä¸‹æ‰“å°æŠ¥é”™
                     if (debug_en) {
                         printf("\r\n[ERR] Checksum Fail! Cal:%02X, Rx:%02X\r\n", cal_checksum, read_byte);
                     }
@@ -81,13 +83,18 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                 
             case STEP_TAIL:
                 if (read_byte == 0x7F) {                     
-                    // Ğ£ÑéÍêÈ«Í¨¹ı£¬¸³Öµ
+                    // æ ¡éªŒå®Œå…¨é€šè¿‡ï¼Œèµ‹å€¼
                     for (int i = 0; i < 8; i++) {
                         uart_data[i] = temp_pack.f_data[i];
                     }
-                    // ½öÔÚµ÷ÊÔÄ£Ê½ÏÂ´òÓ¡³É¹¦ĞÅÏ¢
+                    board_rx_complete_flag = 1;
+                    // ä»…åœ¨è°ƒè¯•æ¨¡å¼ä¸‹æ‰“å°æˆåŠŸä¿¡æ¯
                     if (debug_en) {
-                        printf("\r\n[5] SUCCESS! float[0]:%.2f, float[1]:%.2f\r\n", uart_data[0], uart_data[1]);
+                        rx_cnt++;
+                        // [ä¼˜åŒ–] æ¯æ¥æ”¶50åŒ…æ‰“å°ä¸€æ¬¡ï¼Œé˜²æ­¢æ‰“å°å¤ªå¿«é˜»å¡CPU
+                        if (rx_cnt % 50 == 0) {
+                            printf("RxCnt:%d [OK] X:%.2f Y:%.2f\r\n", rx_cnt, uart_data[0], uart_data[1]);
+                        }
                     }
                 } else {
                     if (debug_en) {
@@ -100,14 +107,14 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
     }
 }
 
-// Õı³£¹¤×÷º¯Êı£¨¾²Ä¬½ÓÊÕ£©
+// æ­£å¸¸å·¥ä½œå‡½æ•°ï¼ˆé™é»˜æ¥æ”¶ï¼‰
 void Parse_Board_Uart_Data(void)
 {
-    Core_Parse_Board_Uart_Data(0); // ´«Èë 0 ¹Ø±Õ´òÓ¡
+    Core_Parse_Board_Uart_Data(0); // ä¼ å…¥ 0 å…³é—­æ‰“å°
 }
 
-// µ÷ÊÔ×¨ÓÃº¯Êı£¨´ø´òÓ¡Êä³ö£©
+// è°ƒè¯•ä¸“ç”¨å‡½æ•°ï¼ˆå¸¦æ‰“å°è¾“å‡ºï¼‰
 void Debug_Parse_Board_Uart_Data(void)
 {
-    Core_Parse_Board_Uart_Data(1); // ´«Èë 1 ¿ªÆô´òÓ¡
+    Core_Parse_Board_Uart_Data(1); // ä¼ å…¥ 1 å¼€å¯æ‰“å°
 }

@@ -13,8 +13,8 @@ float KP=1500.0f, KI=5400.0f, KD=0.0f, MAX_I=3500.0f;
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;//速度环pid
 PID_t pid_yaw_hold;//角度环pid
 PID_t pid_pos_x, pid_pos_y; // 位置环pid
-// [位置环参数] 1m误差对应1.5m/s速度
-float POS_KP=1.5f, POS_KI=0.0f, POS_KD=0.0f, POS_MAX_I=0.5f, POS_OUT_MAX=1.0f;
+// [位置环参数] 1cm误差对应0.015m/s速度
+float POS_KP=0.015f, POS_KI=0.0f, POS_KD=0.0f, POS_MAX_I=0.5f, POS_OUT_MAX=1.0f;
 
 // [参数调整] 
 float YAW_KP=0.075f, YAW_KI=0.0f, YAW_KD=0.001f, YAW_MAX_I=0.01f, YAW_OUT_MAX=4.0f;
