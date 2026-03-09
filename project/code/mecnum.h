@@ -62,6 +62,7 @@ extern float KP,KI,KD,MAX_I;
 extern float YAW_KP, YAW_KI, YAW_KD, YAW_MAX_I, YAW_OUT_MAX;
 extern Target_t target_vel;
 extern Motor_Output_t motor_output;
+extern float ang_out,dist_out;
 /**
  * @brief 设置底盘目标速度
  * @param vx: 前进速度 (m/s)

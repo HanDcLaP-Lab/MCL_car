@@ -20,6 +20,7 @@ float POS_KP=0.015f, POS_KI=0.0f, POS_KD=0.0f, POS_MAX_I=0.5f, POS_OUT_MAX=1.0f;
 float YAW_KP=0.075f, YAW_KI=0.0f, YAW_KD=0.001f, YAW_MAX_I=0.01f, YAW_OUT_MAX=4.0f;
 Target_t target_vel = {0};//目标运行情况
 Motor_Output_t motor_output = {0};
+float ang_out=0,dist_out=0;
 
 // ================== 内部辅助函数 ==================
 
@@ -136,12 +137,14 @@ void Mecanum_Unlock(void) {
 void Visual_Control_Loop(void) {
     // 视觉位置闭环 (随视觉信号更新)
     if (target_vel.unlock) {
-        if(uart_data[0] >0 && uart_data[1] > 0 && uart_data[2] > 0 && uart_data[3] > 0){
+        if((uart_data[0] !=0 || uart_data[1] != 0) && (uart_data[2] != 0 || uart_data[3] != 0)){
             // --- 视觉位置控制 ---
             float dist = 0.0f, angle = 0.0f;
             // 调用视觉解算，传入当前小车Yaw角
             Image_Solve(imu_car_data.yaw, &dist, &angle);
 
+            ang_out=angle;
+            dist_out=dist;
             // 将极坐标误差转换为小车坐标系下的直角坐标误差
             // angle 为目标相对于小车车头的角度 (0度为正前, 90度为正右)
             // 转换为弧度

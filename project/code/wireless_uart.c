@@ -70,3 +70,18 @@ void wireless_uart_output_pid(void){
     wireless_uart_send_float(imu_car_data.yaw); // 增量式PID积分项无意义，改为显示Yaw角
     wireless_uart_send_string("\n");
 }
+
+void wireless_uart_output_target(void){
+    wireless_uart_send_float(uart_data[0]);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(uart_data[1]);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(uart_data[2]);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(uart_data[3]);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(ang_out);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(dist_out);
+    wireless_uart_send_string("\n");
+}

@@ -11,4 +11,5 @@ void wireless_uart_send_int(int32_t send_a);
 void wireless_uart_send_float(float send_a);
 void wireless_uart_output_motor(void);
 void wireless_uart_output_pid(void);
+void wireless_uart_output_target(void);
 #endif
