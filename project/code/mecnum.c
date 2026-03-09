@@ -134,27 +134,32 @@ void Mecanum_Unlock(void) {
 }
 
 void Visual_Control_Loop(void) {
-    // 视觉位置闭环 (周期 20ms)
+    // 视觉位置闭环 (随视觉信号更新)
     if (target_vel.unlock) {
-        // --- 视觉位置控制 ---
-        float dist = 0.0f, angle = 0.0f;
-        // 调用视觉解算，传入当前小车Yaw角
-        Image_Solve(imu_car_data.yaw, &dist, &angle);
+        if(uart_data[0] >0 && uart_data[1] > 0 && uart_data[2] > 0 && uart_data[3] > 0){
+            // --- 视觉位置控制 ---
+            float dist = 0.0f, angle = 0.0f;
+            // 调用视觉解算，传入当前小车Yaw角
+            Image_Solve(imu_car_data.yaw, &dist, &angle);
 
-        // 将极坐标误差转换为小车坐标系下的直角坐标误差
-        // angle 为目标相对于小车车头的角度 (0度为正前, 90度为正右)
-        // 转换为弧度
-        float angle_rad = angle * (float)(3.1415926f / 180.0f);
-        
-        // 小车坐标系: X轴向前(vx), Y轴向右(vy)
-        // cos(0)=1 (前), sin(0)=0
-        // cos(90)=0, sin(90)=1 (右)
-        float err_x = dist * cosf(angle_rad);
-        float err_y = dist * sinf(angle_rad);
+            // 将极坐标误差转换为小车坐标系下的直角坐标误差
+            // angle 为目标相对于小车车头的角度 (0度为正前, 90度为正右)
+            // 转换为弧度
+            float angle_rad = angle * (float)(3.1415926f / 180.0f);
+            
+            // 小车坐标系: X轴向前(vx), Y轴向右(vy)
+            // cos(0)=1 (前), sin(0)=0
+            // cos(90)=0, sin(90)=1 (右)
+            float target_speed_x = TARGET_SPEED * cosf(angle_rad);
+            float target_speed_y = TARGET_SPEED * sinf(angle_rad);
 
-        // 位置环PID计算目标速度
-        target_vel.vx = PID_Calculate(&pid_pos_x, err_x, VISUAL_DT);
-        target_vel.vy = PID_Calculate(&pid_pos_y, err_y, VISUAL_DT);
+            // 位置环PID计算目标速度
+            target_vel.vx = target_speed_x;
+            target_vel.vy = target_speed_y;
+        }else{
+            target_vel.vx = 0;
+            target_vel.vy = 0;
+        }
     }
 }
 
