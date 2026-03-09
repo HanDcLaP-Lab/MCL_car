@@ -196,19 +196,12 @@ void Mecanum_Control_Loop(void) {
     target_vel.v_lb = target_vel.vx + target_vel.vy - center_v;
     target_vel.v_rb = target_vel.vx - target_vel.vy + center_v;
 
-    // [新增] 简单的误差死区处理，防止静止时电机抖动
+    
     // 0.055 是 1ms 下 3200线编码器的最小分辨率
     float err_lf = target_vel.v_lf - encoder_data.lf;
     float err_rf = target_vel.v_rf - encoder_data.rf;
     float err_lb = target_vel.v_lb - encoder_data.lb;
     float err_rb = target_vel.v_rb - encoder_data.rb;
-
-    // [修正] 误差死区仅在目标速度为0时启用，防止运动中输出被锁死在当前值
-    // 如果在运动中强制 err=0，增量式PID会保持当前的高PWM输出，导致无法减速
-    if (fabsf(target_vel.v_lf) < 0.01f && fabsf(err_lf) < 0.03f) err_lf = 0;
-    if (fabsf(target_vel.v_rf) < 0.01f && fabsf(err_rf) < 0.03f) err_rf = 0;
-    if (fabsf(target_vel.v_lb) < 0.01f && fabsf(err_lb) < 0.03f) err_lb = 0;
-    if (fabsf(target_vel.v_rb) < 0.01f && fabsf(err_rb) < 0.03f) err_rb = 0;
 
     // 3. PID 计算
     if (target_vel.unlock) {
@@ -216,6 +209,14 @@ void Mecanum_Control_Loop(void) {
         motor_output.rf = PID_Calculate_Incremental(&pid_rf, err_rf, CONTROL_DT);
         motor_output.lb = PID_Calculate_Incremental(&pid_lb, err_lb, CONTROL_DT);
         motor_output.rb = PID_Calculate_Incremental(&pid_rb, err_rb, CONTROL_DT);
+
+        // 简单的误差死区处理，防止静止时电机抖动
+        // 误差死区仅在目标速度为0时启用，防止运动中输出被锁死在当前值
+        // 如果在运动中强制 err=0，增量式PID会保持当前的高PWM输出，导致无法减速
+        if (fabsf(target_vel.v_lf) < 0.01f && fabsf(err_lf) < 0.03f) motor_output.lf = 0;
+        if (fabsf(target_vel.v_rf) < 0.01f && fabsf(err_rf) < 0.03f) motor_output.rf = 0;
+        if (fabsf(target_vel.v_lb) < 0.01f && fabsf(err_lb) < 0.03f) motor_output.lb = 0;
+        if (fabsf(target_vel.v_rb) < 0.01f && fabsf(err_rb) < 0.03f) motor_output.rb = 0;
     } else {
         motor_output.lf = 0;
         motor_output.rf = 0;
