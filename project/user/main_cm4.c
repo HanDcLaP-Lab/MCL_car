@@ -66,7 +66,12 @@ int main(void)
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     pit_ms_init(PIT_CH0, 1);
-    system_delay_ms(3000);
+    while (imu_car_data.is_calibrated == 0) {
+        Parse_Board_Uart_Data();
+        seekfree_assistant_data_analysis();
+        system_delay_ms(1); 
+    }
+    Mecanum_Unlock();
 
     test_program_1();
     
@@ -78,7 +83,7 @@ int main(void)
 
         if (board_rx_complete_flag) {
             board_rx_complete_flag = 0;
-            Visual_Control_Loop();
+            //Visual_Control_Loop();
         }
 
         seekfree_assistant_data_analysis();
