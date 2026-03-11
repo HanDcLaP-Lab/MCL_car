@@ -135,37 +135,60 @@ void Mecanum_Unlock(void) {
 }
 
 void Visual_Control_Loop(void) {
-    // 视觉位置闭环 (随视觉信号更新)
+    static uint32_t lost_timer = 0;
+    static float last_vx = 0.0f;
+    static float last_vy = 0.0f;
+
     if (target_vel.unlock) {
-        if((uart_data[0] !=0 || uart_data[1] != 0) && (uart_data[2] != 0 || uart_data[3] != 0)){
-            // --- 视觉位置控制 ---
+      
+        uint8_t light_num = (uint8_t)uart_data[5];
+        //看到小车且看到了目标 (>=2个灯)
+        if (light_num >= 2) {
             float dist = 0.0f, angle = 0.0f;
-            // 调用视觉解算，传入当前小车Yaw角
             Image_Solve(imu_car_data.yaw, &dist, &angle);
 
-            ang_out=angle;
-            dist_out=dist;
-            // 将极坐标误差转换为小车坐标系下的直角坐标误差
-            // angle 为目标相对于小车车头的角度 (0度为正前, 90度为正右)
-            // 转换为弧度
+            ang_out = angle;
+            dist_out = dist;
+
             float angle_rad = angle * (float)(3.1415926f / 180.0f);
-            
-            // 小车坐标系: X轴向前(vx), Y轴向右(vy)
-            // cos(0)=1 (前), sin(0)=0
-            // cos(90)=0, sin(90)=1 (右)
             float target_speed_x = TARGET_SPEED * cosf(angle_rad);
             float target_speed_y = TARGET_SPEED * sinf(angle_rad);
 
-            // 位置环PID计算目标速度
             target_vel.vx = target_speed_x;
             target_vel.vy = target_speed_y;
-        }else{
+
+            // [新增] 记录最后有效速度，清零定时器
+            last_vx = target_speed_x;
+            last_vy = target_speed_y;
+            lost_timer = 0; 
+            
+        } 
+        // 丢失目标：只看到了小车 (==1个灯)
+        else if (light_num == 1) {
+            // 假设该函数由串口接收中断或主循环调用，累加调用周期 (假设平均 10ms-20ms 一次)
+            // 这里为了精准，可以粗略每次加 20，或根据实际调用频率调整
+            lost_timer += VISUAL_DT * 1000;
+
+            if (lost_timer <= COAST_TIME_MS) {
+                // 在记忆时间内，维持原有方向，但速度逐渐衰减
+                last_vx *= COAST_DECAY;
+                last_vy *= COAST_DECAY;
+                target_vel.vx = last_vx;
+                target_vel.vy = last_vy;
+            } else {
+                // 超时彻底丢失，停车
+                target_vel.vx = 0;
+                target_vel.vy = 0;
+            }
+        } 
+        // 极其危险：连小车自己都看不到了 (==0个灯)
+        else {
             target_vel.vx = 0;
             target_vel.vy = 0;
+            lost_timer = COAST_TIME_MS; // 强制标记为超时，防止恢复成1个灯时突然暴冲
         }
     }
 }
-
 void Mecanum_Control_Loop(void) {
 
     // 1. 获取反馈速度

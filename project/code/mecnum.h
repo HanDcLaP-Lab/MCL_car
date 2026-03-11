@@ -31,6 +31,10 @@
 #define MOTOR_LB_DIR    P18_4               // 左后 DIR
 #define MOTOR_RB_DIR    P06_3               // 右后 DIR
 
+//记忆功能
+#define COAST_TIME_MS 1000 // 目标丢失后的记忆滑行时间 (毫秒)
+#define COAST_DECAY   0.98f // 速度衰减系数 (每次循环衰减)
+
 // ================== 结构体定义 ==================
 typedef struct {
     float vx;       // X轴速度 (m/s)
