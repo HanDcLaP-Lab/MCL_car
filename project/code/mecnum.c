@@ -138,11 +138,12 @@ void Visual_Control_Loop(void) {
     static uint32_t lost_timer = 0;
     static float last_vx = 0.0f;
     static float last_vy = 0.0f;
+    static uint8_t is_edge = 0;
 
     if (target_vel.unlock) {
-      
         uint8_t light_num = (uint8_t)uart_data[5];
-        //看到小车且看到了目标 (>=2个灯)
+
+        // 正常情况：看到小车且看到了目标 (>=2个灯)
         if (light_num >= 2) {
             float dist = 0.0f, angle = 0.0f;
             Image_Solve(imu_car_data.yaw, &dist, &angle);
@@ -157,26 +158,32 @@ void Visual_Control_Loop(void) {
             target_vel.vx = target_speed_x;
             target_vel.vy = target_speed_y;
 
-            // [新增] 记录最后有效速度，清零定时器
+            // 记录最后有效速度，清零定时器
             last_vx = target_speed_x;
             last_vy = target_speed_y;
             lost_timer = 0; 
+
+            // 边缘判定：只要长宽任一方向距离中心超过 40cm，即视为在视野边缘
+            is_edge = (fabsf(uart_data[2]) > 40.0f) || (fabsf(uart_data[3]) > 40.0f);
             
         } 
         // 丢失目标：只看到了小车 (==1个灯)
         else if (light_num == 1) {
-            // 假设该函数由串口接收中断或主循环调用，累加调用周期 (假设平均 10ms-20ms 一次)
-            // 这里为了精准，可以粗略每次加 20，或根据实际调用频率调整
             lost_timer += VISUAL_DT * 1000;
 
             if (lost_timer <= COAST_TIME_MS) {
-                // 在记忆时间内，维持原有方向，但速度逐渐衰减
-                last_vx *= COAST_DECAY;
-                last_vy *= COAST_DECAY;
+                
+                // 【核心逻辑】：如果不是在边缘消失的（即在中心被遮挡），则每次循环衰减速度
+                if (!is_edge) {
+                    last_vx *= COAST_DECAY; 
+                    last_vy *= COAST_DECAY;
+                }
+                // 如果是 is_edge (边缘消失)，则跳过上述衰减，last_vx/vy 保持不变 (原速运动)
+
                 target_vel.vx = last_vx;
                 target_vel.vy = last_vy;
             } else {
-                // 超时彻底丢失，停车
+                // 彻底超时，停车
                 target_vel.vx = 0;
                 target_vel.vy = 0;
             }
@@ -185,10 +192,11 @@ void Visual_Control_Loop(void) {
         else {
             target_vel.vx = 0;
             target_vel.vy = 0;
-            lost_timer = COAST_TIME_MS; // 强制标记为超时，防止恢复成1个灯时突然暴冲
+            lost_timer = COAST_TIME_MS; // 强制标记为超时
         }
     }
 }
+
 void Mecanum_Control_Loop(void) {
 
     // 1. 获取反馈速度

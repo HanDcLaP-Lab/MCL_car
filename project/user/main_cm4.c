@@ -73,7 +73,7 @@ int main(void)
     }
     Mecanum_Unlock();
 
-    test_program_1();
+    //test_program_1();
     
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
@@ -83,7 +83,7 @@ int main(void)
 
         if (board_rx_complete_flag) {
             board_rx_complete_flag = 0;
-            //Visual_Control_Loop();
+            Visual_Control_Loop();
         }
 
         seekfree_assistant_data_analysis();

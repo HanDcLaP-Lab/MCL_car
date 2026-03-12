@@ -33,7 +33,7 @@
 
 //记忆功能
 #define COAST_TIME_MS 1000 // 目标丢失后的记忆滑行时间 (毫秒)
-#define COAST_DECAY   0.98f // 速度衰减系数 (每次循环衰减)
+#define COAST_DECAY   0.998f // 速度衰减系数 (每次循环衰减)
 
 // ================== 结构体定义 ==================
 typedef struct {
