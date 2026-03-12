@@ -164,7 +164,7 @@ void Visual_Control_Loop(void) {
             lost_timer = 0; 
 
             // 边缘判定：只要长宽任一方向距离中心超过 40cm，即视为在视野边缘
-            is_edge = (fabsf(uart_data[2]) > 40.0f) || (fabsf(uart_data[3]) > 40.0f);
+            is_edge = (fabsf(uart_data[2]) > 80.0) || (fabsf(uart_data[3]) > 80.0);
             
         } 
         // 丢失目标：只看到了小车 (==1个灯)
