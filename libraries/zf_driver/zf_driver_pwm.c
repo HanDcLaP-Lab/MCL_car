@@ -47,6 +47,8 @@
 //cyhal_pwm_t pwm_obj[TCPWM_CH_NUM];
 //uint32 pwm_freq_save[TCPWM_CH_NUM];
 
+static uint32 pwm_duty_save[TCPWM_CH_NUM];
+
 
 //-------------------------------------------------------------------------------------------------------------------
 //  函数简介     获取端口参数
@@ -233,6 +235,84 @@ void pwm_set_duty (pwm_channel_enum pwmch, uint32 duty)
 }
 
 //-------------------------------------------------------------------------------------------------------------------
+// 函数简介     PWM频率设置
+// 参数说明     pin             选择 PWM 引脚
+// 参数说明     duty            设置占空比
+// 返回参数     void
+// 使用示例     pwm_set_freq(TCPWM1_CH00_P03_1, 5000); // 设置频率为 5000hz
+// 备注信息     
+//-------------------------------------------------------------------------------------------------------------------
+void pwm_set_freq (pwm_channel_enum pwmch, uint32 freq)
+{
+    uint16 period = 0;
+    uint16 compare = 0;
+    uint16 counter = 0;
+    float count_duty = 0;
+    float pwm_duty = 0;
+    
+    uint32 tcpwm_prescaler_div                   = 0;
+    
+    cy_en_tcpwm_clk_prescalers_t      clockPrescaler;
+    
+    if(freq == 0)
+    {
+        pwm_duty_save[pwmch] = TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)].unCC0.u32Register;
+        
+        TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)].unCC0.u32Register = 0;
+    }
+    else
+    {
+        tcpwm_prescaler_div = (PWM_CLK_FREQ/freq)>>16;
+        if(PWM_CLK_FREQ % (freq<<16)) tcpwm_prescaler_div ++;
+        if      (1   >= tcpwm_prescaler_div)  clockPrescaler     = CY_TCPWM_PRESCALER_DIVBY_1  ;
+        else if (2   >= tcpwm_prescaler_div)  clockPrescaler     = CY_TCPWM_PRESCALER_DIVBY_2  ;
+        else if (4   >= tcpwm_prescaler_div)  clockPrescaler     = CY_TCPWM_PRESCALER_DIVBY_4  ;
+        else if (8   >= tcpwm_prescaler_div)  clockPrescaler     = CY_TCPWM_PRESCALER_DIVBY_8  ;
+        else if (16  >= tcpwm_prescaler_div)  clockPrescaler     = CY_TCPWM_PRESCALER_DIVBY_16 ;
+        else if (32  >= tcpwm_prescaler_div)  clockPrescaler     = CY_TCPWM_PRESCALER_DIVBY_32 ;
+        else if (64  >= tcpwm_prescaler_div)  clockPrescaler     = CY_TCPWM_PRESCALER_DIVBY_64 ;
+        else if (128 >= tcpwm_prescaler_div)  clockPrescaler     = CY_TCPWM_PRESCALER_DIVBY_128;
+        else
+        {
+            zf_assert(0) ;                                                          // 频率范围溢出
+        }
+        
+        period = TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)].unPERIOD.u32Register;
+        
+        if(pwm_duty_save[pwmch] != 0)
+        {
+            compare = pwm_duty_save[pwmch];
+            
+            pwm_duty_save[pwmch] = 0;
+        }
+        else
+        {
+            compare = TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)].unCC0.u32Register;
+        }
+        counter = TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)].unCOUNTER.u32Register;
+        
+        pwm_duty = (float)compare / (float)period;
+        
+        count_duty = (float)counter / (float)period;
+        
+        if(count_duty > 1.0f)
+        {
+            count_duty = 1.0f;
+        }
+        
+        period = ((PWM_CLK_FREQ / (0x01 << clockPrescaler) / freq) - 1);
+        
+        TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)].unDT.stcField.u8DT_LINE_OUT_L = clockPrescaler;
+        
+        TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)].unPERIOD.u32Register = period;
+        
+        TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)].unCC0.u32Register = (uint32)(period * pwm_duty);
+        
+        TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)].unCOUNTER.u32Register = (uint32)(period * count_duty) - 1;
+    }
+}
+
+//-------------------------------------------------------------------------------------------------------------------
 // 函数简介     PWM 初始化
 // 参数说明     pin             选择 PWM 引脚
 // 参数说明     freq            设置频率 同个模块只有最后一次设置生效
@@ -256,6 +336,12 @@ void pwm_init (pwm_channel_enum pwmch, uint32 freq, uint32 duty)
     Cy_SysClk_PeriphAssignDivider((en_clk_dst_t)(get_pwm_ch(pwmch) + PCLK_TCPWM0_CLOCKS0), (cy_en_divider_types_t)CY_SYSCLK_DIV_16_BIT, 0ul);
     Cy_SysClk_PeriphSetDivider((cy_en_divider_types_t)CY_SYSCLK_DIV_16_BIT, 0ul, 9u); // 80Mhz时钟被10分频为8Mhz
     Cy_SysClk_PeriphEnableDivider((cy_en_divider_types_t)CY_SYSCLK_DIV_16_BIT, 0ul);
+    
+    if(freq == 0)
+    {
+        freq = 1000;
+        pwm_duty_save[pwmch] = 1;
+    }
     
     tcpwm_prescaler_div = (PWM_CLK_FREQ/freq)>>16;
     if(PWM_CLK_FREQ % (freq<<16)) tcpwm_prescaler_div ++;
@@ -284,6 +370,14 @@ void pwm_init (pwm_channel_enum pwmch, uint32 freq, uint32 duty)
     tcpwm_pwm_config.countInputMode     = CY_TCPWM_INPUT_LEVEL                  ;
     tcpwm_pwm_config.countInput         = 1uL                                   ;
     tcpwm_pwm_config.enableCompare0Swap = true                                  ;
+    
+    if(pwm_duty_save[pwmch])
+    {
+        pwm_duty_save[pwmch] = tcpwm_pwm_config.compare0;
+        tcpwm_pwm_config.compare0           = 0;
+    }
+    
+    
     
     Cy_Tcpwm_Pwm_Init((volatile stc_TCPWM_GRP_CNT_t*) &TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)], &tcpwm_pwm_config);
     Cy_Tcpwm_Pwm_Enable((volatile stc_TCPWM_GRP_CNT_t*) &TCPWM0->GRP[0].CNT[get_pwm_ch(pwmch)]);

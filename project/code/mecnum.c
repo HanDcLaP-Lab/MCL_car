@@ -202,8 +202,9 @@ void Mecanum_Control_Loop(void) {
     // 1. 获取反馈速度
     Encoder_GetCount();
 
-    // [新增] 初始校准保护：如果IMU未校准完成，强制停止电机并重置PID
-    if (imu_car_data.is_calibrated == 0) {
+    if(imu_car_data.is_calibrated == 1){
+        Mecanum_Unlock();
+    }else{
         Mecanum_Stop();
         return;
     }

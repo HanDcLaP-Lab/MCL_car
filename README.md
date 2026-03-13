@@ -80,3 +80,8 @@ imu位置更新，姿态角映射相应更改
 
 3.13a
 修改了丢失目标后记忆功能
+
+3.14a
+更新逐飞库至版本3.4.1
+为新imu准备了imu_car_rc.c/h，需要替换现有imu_car.c/h在zf_common_headfile.h的位置，并更新相关函数调用
+[fix]再次修复了imu_car_data.is_calibrated导致的小车锁死的问题

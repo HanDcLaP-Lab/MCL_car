@@ -80,6 +80,8 @@
 #include "zf_device_gnss.h"
 #include "zf_device_icm20602.h"
 #include "zf_device_imu660ra.h"
+#include "zf_device_imu660rb.h"
+#include "zf_device_imu660rc.h"
 #include "zf_device_imu963ra.h"
 #include "zf_device_ips114.h"
 #include "zf_device_ips200.h"
@@ -97,8 +99,11 @@
 #include "zf_device_wireless_uart.h"
 //===================================================外接设备驱动层===================================================
 
+//=====================================================组件应用层=====================================================
+#include "seekfree_assistant.h"
+#include "seekfree_assistant_interface.h"
+//=====================================================组件应用层=====================================================
 
-//-----------------------------------------------自定义文件---------------------------------------------------------//
 #include "imu_car.h"
 #include "kalman_filter.h"
 #include "pid.h"
@@ -108,8 +113,5 @@
 #include "test.h"
 #include "car_image.h"
 #include "car_board_comm.h"
-//=====================================================组件应用层=====================================================
-#include "seekfree_assistant.h"
-#include "seekfree_assistant_interface.h"
-//=====================================================组件应用层=====================================================
+
 #endif
