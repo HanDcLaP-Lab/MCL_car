@@ -2,7 +2,7 @@
 
 #include "zf_common_headfile.h"
 #include <math.h>
-
+int EN = 1;
 // [参数调整] 针对增量式PID (dt=0.001s) 的调优参数
 // KP=3500: 0.5m/s 误差时提供 1750 的基础PWM，确保启动有力
 // KI=3000: 0.5m/s 误差时每秒增加 1500 PWM (3000*0.5*0.001*1000)，消除静差只需约0.5-1秒
@@ -240,10 +240,10 @@ void Mecanum_Control_Loop(void) {
 
     // 3. PID 计算
     if (target_vel.unlock) {
-        motor_output.lf = PID_Calculate_Incremental(&pid_lf, err_lf, CONTROL_DT);
-        motor_output.rf = PID_Calculate_Incremental(&pid_rf, err_rf, CONTROL_DT);
-        motor_output.lb = PID_Calculate_Incremental(&pid_lb, err_lb, CONTROL_DT);
-        motor_output.rb = PID_Calculate_Incremental(&pid_rb, err_rb, CONTROL_DT);
+        motor_output.lf = EN * PID_Calculate_Incremental(&pid_lf, err_lf, CONTROL_DT);
+        motor_output.rf = EN * PID_Calculate_Incremental(&pid_rf, err_rf, CONTROL_DT);
+        motor_output.lb = EN * PID_Calculate_Incremental(&pid_lb, err_lb, CONTROL_DT);
+        motor_output.rb = EN * PID_Calculate_Incremental(&pid_rb, err_rb, CONTROL_DT);
 
         // 简单的误差死区处理，防止静止时电机抖动
         // 误差死区仅在目标速度为0时启用，防止运动中输出被锁死在当前值

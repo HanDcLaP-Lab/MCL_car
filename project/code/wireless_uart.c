@@ -100,3 +100,13 @@ void wireless_uart_output_imu(void){
     wireless_uart_send_int(imu660rc_acc_z);
     wireless_uart_send_string("\n");
 }
+void wireless_uart_output_encoder(void){
+    wireless_uart_send_float(encoder_data.lf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(encoder_data.rf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(encoder_data.lb);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(encoder_data.rb);
+    wireless_uart_send_string("\n");
+}

@@ -133,7 +133,8 @@ void Wireless_Update(uint8_t ch, float val) {
             break;
         case 8:
             if(val == 1){
-              Mecanum_Stop();}
+              Mecanum_Stop();
+            EN = 0;}
             if(val== 0){
                 wireless_uart_send_string("done");
                 Mecanum_Unlock();

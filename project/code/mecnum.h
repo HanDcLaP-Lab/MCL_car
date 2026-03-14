@@ -36,6 +36,7 @@
 #define COAST_DECAY   0.998f // 速度衰减系数 (每次循环衰减)
 #define EDGE_DISTANCE 80.0 //边界判定距离
 
+extern int EN;
 // ================== 结构体定义 ==================
 typedef struct {
     float vx;       // X轴速度 (m/s)
