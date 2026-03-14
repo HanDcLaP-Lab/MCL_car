@@ -146,7 +146,7 @@ void Visual_Control_Loop(void) {
         // 正常情况：看到小车且看到了目标 (>=2个灯)
         if (light_num >= 2) {
             float dist = 0.0f, angle = 0.0f;
-            Image_Solve(imu_car_data.yaw, &dist, &angle);
+            Image_Solve(imu_car_rc_data.yaw, &dist, &angle);
 
             ang_out = angle;
             dist_out = dist;
@@ -164,7 +164,7 @@ void Visual_Control_Loop(void) {
             lost_timer = 0; 
 
             // 边缘判定：只要长宽任一方向距离中心超过 40cm，即视为在视野边缘
-            is_edge = (fabsf(uart_data[2]) > 80.0) || (fabsf(uart_data[3]) > 80.0);
+            is_edge = (fabsf(uart_data[2]) > EDGE_DISTANCE) || (fabsf(uart_data[3]) > EDGE_DISTANCE);
             
         } 
         // 丢失目标：只看到了小车 (==1个灯)
@@ -202,7 +202,7 @@ void Mecanum_Control_Loop(void) {
     // 1. 获取反馈速度
     Encoder_GetCount();
 
-    if(imu_car_data.is_calibrated == 1){
+    if(imu_car_rc_data.is_calibrated == 1){
         Mecanum_Unlock();
     }else{
         Mecanum_Stop();
@@ -212,7 +212,7 @@ void Mecanum_Control_Loop(void) {
     // 2. Yaw角闭环 (周期 1ms)
     if (target_vel.unlock) {
         // --- Yaw角控制 (维持 Yaw = 0) ---
-        float yaw_error = 0.0f - imu_car_data.yaw;
+        float yaw_error = 0.0f - imu_car_rc_data.yaw;
         // 处理角度跳变 (-180 ~ 180)
         if (yaw_error > 180.0f) yaw_error -= 360.0f;
         else if (yaw_error < -180.0f) yaw_error += 360.0f;

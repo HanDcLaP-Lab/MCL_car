@@ -113,5 +113,5 @@
 #include "test.h"
 #include "car_image.h"
 #include "car_board_comm.h"
-
+#include "imu_car_rc.h"
 #endif

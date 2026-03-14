@@ -47,7 +47,7 @@ void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务�
     tsl1401_collect_pit_handler(); ///逐飞库空例程自带，意义不明
     
     cnt++;
-    IMU_Car_Update_Loop();
+    IMU_Car_RC_Update_Loop();
 
     Mecanum_Control_Loop();
       
@@ -60,7 +60,7 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务�
     //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
     //Current_speed_display();
     //wireless_uart_output_pid();
-    wireless_uart_output_target();
+    wireless_uart_output_imu();
 }
 
 void pit0_ch2_isr()                     // 定时器通道 2 周期中断服务函数      
@@ -387,9 +387,10 @@ void gpio_12_exti_isr()                  // 外部 GPIO_12 中断服务函数
 
 void gpio_13_exti_isr()                  // 外部 GPIO_13 中断服务函数     
 {
-
-
-
+    if(exti_flag_get(P13_2))             // 检查是否是你设置的新引脚触发
+    {
+        imu660rc_callback();             // 调用回调函数读取四元数和欧拉角
+    }
 }
 
 void gpio_14_exti_isr()                  // 外部 GPIO_14 中断服务函数     
@@ -422,7 +423,10 @@ void gpio_17_exti_isr()                  // 外部 GPIO_17 中断服务函数
 
 void gpio_18_exti_isr()                  // 外部 GPIO_18 中断服务函数     
 {
-
+    // if(exti_flag_get(P18_5))             // 检查是否是 IMU660RC_INT2 引脚触发
+    // {
+    //     imu660rc_callback();             // 调用回调函数读取四元数和欧拉角
+    // }
 
 
 }
