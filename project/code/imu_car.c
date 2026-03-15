@@ -25,10 +25,10 @@ static float invSqrt(float x) {
 }
 
 void IMU_Car_Init(void){
-    // 初始化硬件 (假设延用原底层)
+    // 初始化硬件：使用 660RC，但禁用内部硬件四元数，保留软件姿态解算
     while(1)
     {
-        if(imu660ra_init()) 
+        if(imu660rc_init(IMU660RC_QUARTERNION_DISABLE)) 
         {
            printf("IMU Init Error\n");   
         }
@@ -134,18 +134,18 @@ static void World_Accel_Calc(float ax, float ay, float az) {
 
 void IMU_Car_Update_Loop(void) {
     
-    // 1. 获取硬件数据
-    imu660ra_get_acc();
-    imu660ra_get_gyro();
+    // 1. 获取 660RC 硬件数据
+    imu660rc_get_acc();
+    imu660rc_get_gyro();
     
-    // 原始数据转换
-    float raw_gx = imu660ra_gyro_transition(imu660ra_gyro_x);
-    float raw_gy = imu660ra_gyro_transition(imu660ra_gyro_y);
-    float raw_gz = imu660ra_gyro_transition(imu660ra_gyro_z);
+    // 原始数据转换 (适配 660RC 的转换宏)
+    float raw_gx = imu660rc_gyro_transition(imu660rc_gyro_x);
+    float raw_gy = imu660rc_gyro_transition(imu660rc_gyro_y);
+    float raw_gz = imu660rc_gyro_transition(imu660rc_gyro_z);
 
-    float raw_ax = imu660ra_acc_transition(imu660ra_acc_x) * GRAVITY_MSS;
-    float raw_ay = imu660ra_acc_transition(imu660ra_acc_y) * GRAVITY_MSS;
-    float raw_az = imu660ra_acc_transition(imu660ra_acc_z) * GRAVITY_MSS;
+    float raw_ax = imu660rc_acc_transition(imu660rc_acc_x) * GRAVITY_MSS;
+    float raw_ay = imu660rc_acc_transition(imu660rc_acc_y) * GRAVITY_MSS;
+    float raw_az = imu660rc_acc_transition(imu660rc_acc_z) * GRAVITY_MSS;
 
     // ================= 校准阶段 (包含安装误差修正) =================
     if (imu_car_data.is_calibrated == 0) {

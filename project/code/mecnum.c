@@ -142,11 +142,16 @@ void Visual_Control_Loop(void) {
 
     if (target_vel.unlock) {
         uint8_t light_num = (uint8_t)uart_data[5];
+        // 如果目标 X 和 Y 坐标同时接近于 0，说明数据异常或目标已丢失，视为无效
+        bool target_is_valid = (light_num >= 2);
+        if (fabsf(uart_data[2]) <= 0.001f && fabsf(uart_data[3]) <= 0.001f) {
+            target_is_valid = false;
+        }
 
         // 正常情况：看到小车且看到了目标 (>=2个灯)
-        if (light_num >= 2) {
+        if (target_is_valid) {
             float dist = 0.0f, angle = 0.0f;
-            Image_Solve(imu_car_rc_data.yaw, &dist, &angle);
+            Image_Solve(imu_car_data.yaw, &dist, &angle);
 
             ang_out = angle;
             dist_out = dist;
@@ -168,7 +173,7 @@ void Visual_Control_Loop(void) {
             
         } 
         // 丢失目标：只看到了小车 (==1个灯)
-        else if (light_num == 1) {
+        else if (light_num == 1 || !target_is_valid) {
             lost_timer += VISUAL_DT * 1000;
 
             if (lost_timer <= COAST_TIME_MS) {
@@ -201,18 +206,21 @@ void Mecanum_Control_Loop(void) {
 
     // 1. 获取反馈速度
     Encoder_GetCount();
+    static uint8_t has_unlocked = 0;
 
-    if(imu_car_rc_data.is_calibrated == 1){
-        Mecanum_Unlock();
+    if(imu_car_data.is_calibrated == 1){
+        if(has_unlocked == 0) {
+            Mecanum_Unlock();
+            has_unlocked = 1; // 标记已解锁，以后不再重复调用
+        }
     }else{
         Mecanum_Stop();
         return;
     }
-
     // 2. Yaw角闭环 (周期 1ms)
     if (target_vel.unlock) {
         // --- Yaw角控制 (维持 Yaw = 0) ---
-        float yaw_error = 0.0f - imu_car_rc_data.yaw;
+        float yaw_error = 0.0f - imu_car_data.yaw;
         // 处理角度跳变 (-180 ~ 180)
         if (yaw_error > 180.0f) yaw_error -= 360.0f;
         else if (yaw_error < -180.0f) yaw_error += 360.0f;
