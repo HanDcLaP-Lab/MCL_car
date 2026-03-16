@@ -168,13 +168,13 @@ void Visual_Control_Loop(void) {
             last_vy = target_speed_y;
             lost_timer = 0; 
 
-            // 边缘判定：只要长宽任一方向距离中心超过 40cm，即视为在视野边缘
+            // 边缘判定：只要长宽任一方向距离中心超过 EDGE_DISTANCE，即视为在视野边缘
             is_edge = (fabsf(uart_data[2]) > EDGE_DISTANCE) || (fabsf(uart_data[3]) > EDGE_DISTANCE);
             
         } 
-        // 丢失目标：只看到了小车 (==1个灯)
+        // [修复2] 丢失目标 (1个有效灯)
         else if (light_num == 1 || !target_is_valid) {
-            lost_timer += VISUAL_DT * 1000;
+            lost_timer += (uint32_t)(VISUAL_DT * 1000); // 毫秒级累加
 
             if (lost_timer <= COAST_TIME_MS) {
                 
@@ -192,7 +192,7 @@ void Visual_Control_Loop(void) {
                 target_vel.vx = 0;
                 target_vel.vy = 0;
             }
-        } 
+        }
         // 极其危险：连小车自己都看不到了 (==0个灯)
         else {
             target_vel.vx = 0;
@@ -220,12 +220,14 @@ void Mecanum_Control_Loop(void) {
     // 2. Yaw角闭环 (周期 1ms)
     if (target_vel.unlock) {
         // --- Yaw角控制 (维持 Yaw = 0) ---
-        float yaw_error = 0.0f - imu_car_data.yaw;
-        // 处理角度跳变 (-180 ~ 180)
-        if (yaw_error > 180.0f) yaw_error -= 360.0f;
-        else if (yaw_error < -180.0f) yaw_error += 360.0f;
-        
-        target_vel.wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);
+        // 根据 imu_car.c 的修改，imu_car_data.yaw_total 为连续角度，且顺时针为正。
+        // 控制目标是保持 yaw_total 为 0。
+        // 根据 README，wz > 0 为逆时针转。
+        // 当车体顺时针偏转 (yaw_total > 0)，需要一个逆时针的角速度 (wz > 0) 来纠正。
+        // 因此，PID的输入误差应与 yaw_total 同号。
+        // 此处误差定义为 当前值 - 目标值, 即 imu_car_data.yaw_total - 0
+        float yaw_error = imu_car_data.yaw_total;
+        target_vel.wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT); // 使用连续角度，不再需要处理跳变
     }
 
     // 3. 运动学逆解算 (Inverse Kinematics)
