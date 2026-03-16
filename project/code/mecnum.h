@@ -32,9 +32,11 @@
 #define MOTOR_RB_DIR    P06_3               // 右后 DIR
 
 //记忆功能
-#define COAST_TIME_MS  0 // 目标丢失后的记忆滑行时间 (毫秒)
-#define COAST_DECAY   0.998f // 速度衰减系数 (每次循环衰减)
-#define EDGE_DISTANCE 80.0 //边界判定距离
+// 记忆与视觉边界功能
+#define COAST_CNT      3        // 目标丢失后的记忆滑行帧数 (每帧约20ms，3帧即60ms)
+#define COAST_DECAY    0.998f   // 速度衰减系数 (每次循环衰减)
+#define EDGE_X         50.0f    // 前后方向边缘视野界限 (cm)
+#define EDGE_Y         70.0f    // 左右方向边缘视野界限 (cm)
 
 extern int EN;
 // ================== 结构体定义 ==================

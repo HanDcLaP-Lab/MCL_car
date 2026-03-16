@@ -133,71 +133,97 @@ void Mecanum_Unlock(void) {
     PID_Reset(&pid_pos_x);
     PID_Reset(&pid_pos_y);
 }
-
 void Visual_Control_Loop(void) {
-    static uint32_t lost_timer = 0;
+    static uint8_t lost_cnt = 0;
     static float last_vx = 0.0f;
     static float last_vy = 0.0f;
     static uint8_t is_edge = 0;
 
     if (target_vel.unlock) {
-        uint8_t light_num = (uint8_t)uart_data[5];
-        // 如果目标 X 和 Y 坐标同时接近于 0，说明数据异常或目标已丢失，视为无效
-        bool target_is_valid = (light_num >= 2);
-        if (fabsf(uart_data[2]) <= 0.001f && fabsf(uart_data[3]) <= 0.001f) {
-            target_is_valid = false;
-        }
+        // 解析无人机下发的位掩码状态
+        // 0: 全丢, 1: 仅小车, 2: 仅信标, 3: 都有
+        uint8_t locked_state = (uint8_t)uart_data[5]; 
 
-        // 正常情况：看到小车且看到了目标 (>=2个灯)
-        if (target_is_valid) {
+        // 设定滑行时间: 3 个 VISUAL_DT (假设 VISUAL_DT 为 0.02s，即 60ms)
+        //uint32_t coast_max_time = (uint32_t)(3 * VISUAL_DT * 1000); 
+
+        // ==========================================
+        // 状态 3：双目标锁定 (正常追踪)
+        // ==========================================
+        if (locked_state == 3) {
             float dist = 0.0f, angle = 0.0f;
             Image_Solve(imu_car_data.yaw, &dist, &angle);
 
             ang_out = angle;
             dist_out = dist;
 
+            float current_speed = TARGET_SPEED;
+            if (dist < 8.0f) { 
+                current_speed = 0.0f; // 死区刹车
+            } else if (dist < 35.0f) {
+                current_speed = TARGET_SPEED * (dist / 35.0f); // 比例减速
+                if (current_speed < 0.15f) current_speed = 0.15f; 
+            }
+
             float angle_rad = angle * (float)(3.1415926f / 180.0f);
-            float target_speed_x = TARGET_SPEED * cosf(angle_rad);
-            float target_speed_y = TARGET_SPEED * sinf(angle_rad);
+            float target_speed_x = current_speed * cosf(angle_rad);
+            float target_speed_y = current_speed * sinf(angle_rad);
 
-            target_vel.vx = target_speed_x;
-            target_vel.vy = target_speed_y;
+            Mecanum_Set_Velocity(target_speed_x, target_speed_y, 0.0f);
 
-            // 记录最后有效速度，清零定时器
+            // 记录最后有效速度与状态
             last_vx = target_speed_x;
             last_vy = target_speed_y;
-            lost_timer = 0; 
+            lost_cnt = 0; 
 
-            // 边缘判定：只要长宽任一方向距离中心超过 EDGE_DISTANCE，即视为在视野边缘
-            is_edge = (fabsf(uart_data[2]) > EDGE_DISTANCE) || (fabsf(uart_data[3]) > EDGE_DISTANCE);
-            
+            // 记录丢失前的一瞬间，信标是否在视野边缘 (X边界40cm，Y边界70cm)
+            is_edge = (fabsf(uart_data[2]) > EDGE_X) || (fabsf(uart_data[3]) > EDGE_Y);
         } 
-        // [修复2] 丢失目标 (1个有效灯)
-        else if (light_num == 1 || !target_is_valid) {
-            lost_timer += (uint32_t)(VISUAL_DT * 1000); // 毫秒级累加
-
-            if (lost_timer <= COAST_TIME_MS) {
-                
-                // 【核心逻辑】：如果不是在边缘消失的（即在中心被遮挡），则每次循环衰减速度
-                if (!is_edge) {
-                    last_vx *= COAST_DECAY; 
-                    last_vy *= COAST_DECAY;
-                }
-                // 如果是 is_edge (边缘消失)，则跳过上述衰减，last_vx/vy 保持不变 (原速运动)
-
-                target_vel.vx = last_vx;
-                target_vel.vy = last_vy;
+        // ==========================================
+        // 状态 2：仅信标 (小车丢失)
+        // ==========================================
+        else if (locked_state == 2) {
+            // 此时无人机算不出小车的相对坐标，只能依靠小车自身的记忆滑行
+            
+            
+            if (lost_cnt <= COAST_CNT) {
+                lost_cnt++;
+                last_vx *= COAST_DECAY; 
+                last_vy *= COAST_DECAY;
+                Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); // 【修改点】
             } else {
-                // 彻底超时，停车
-                target_vel.vx = 0;
-                target_vel.vy = 0;
+                Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
             }
         }
-        // 极其危险：连小车自己都看不到了 (==0个灯)
+        // ==========================================
+        // 状态 1：仅小车 (信标丢失)
+        // ==========================================
+        else if (locked_state == 1) {
+            // 如果信标在边缘丢失，立刻刹车，配合无人机原地扫圈搜索
+            if (is_edge) {
+                Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
+                lost_cnt = COAST_CNT + 1; // 强制超时，防止后续误触发
+            } 
+            // 如果信标在中心丢失，说明被车底遮挡，滑行 3 帧开出盲区
+            else {
+                
+                if (lost_cnt <= COAST_CNT) {
+                    lost_cnt++;
+                    last_vx *= COAST_DECAY; 
+                    last_vy *= COAST_DECAY;
+                    Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); // 【修改点】
+                } else {
+                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
+                }
+            }
+        }
+        // ==========================================
+        // 状态 0：全丢 (极度危险)
+        // ==========================================
         else {
-            target_vel.vx = 0;
-            target_vel.vy = 0;
-            lost_timer = COAST_TIME_MS; // 强制标记为超时
+            // 没有任何参考物，直接强制急停
+            Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
+            lost_cnt = COAST_CNT + 1; 
         }
     }
 }
@@ -218,23 +244,25 @@ void Mecanum_Control_Loop(void) {
         return;
     }
     // 2. Yaw角闭环 (周期 1ms)
+    float final_wz = target_vel.wz; // 默认采用外部设定的期望自转速度
     if (target_vel.unlock) {
-        // --- Yaw角控制 (维持 Yaw = 0) ---
-        // 根据 imu_car.c 的修改，imu_car_data.yaw_total 为连续角度，且顺时针为正。
-        // 控制目标是保持 yaw_total 为 0。
-        // 根据 README，wz > 0 为逆时针转。
-        // 当车体顺时针偏转 (yaw_total > 0)，需要一个逆时针的角速度 (wz > 0) 来纠正。
-        // 因此，PID的输入误差应与 yaw_total 同号。
-        // 此处误差定义为 当前值 - 目标值, 即 imu_car_data.yaw_total - 0
-        float yaw_error = imu_car_data.yaw_total;
-        target_vel.wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT); // 使用连续角度，不再需要处理跳变
+        // 判断：如果外部没有要求自转(wz近似为0)，则启动 Yaw 闭环锁死车头
+        if (fabsf(target_vel.wz) < 0.05f) {
+            // 目标永远指向0度
+            float yaw_error = 0.0f - imu_car_data.yaw_total; 
+            
+            // 这里的 PID 输出直接充当最终的旋转角速度
+            final_wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);
+        } else {
+            // 如果外部有旋转命令(如测试程序)，暂停角度环，防止互相打架
+            PID_Reset(&pid_yaw_hold); 
+        }
     }
-
     // 3. 运动学逆解算 (Inverse Kinematics)
     // 根据车身坐标系 V_x, V_y, Omega 计算四个轮子的线速度
     // 注意：这里的正负号取决于电机安装方向和轮子类型 (A/B轮布局)
     // 典型布局：左前/右后为A轮，右前/左后为B轮
-    float center_v = target_vel.wz * (CAR_L + CAR_W);
+    float center_v = final_wz * (CAR_L + CAR_W);
 
     target_vel.v_lf = target_vel.vx - target_vel.vy - center_v;
     target_vel.v_rf = target_vel.vx + target_vel.vy + center_v;
