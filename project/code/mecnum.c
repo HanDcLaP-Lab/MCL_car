@@ -184,9 +184,10 @@ void Visual_Control_Loop(void) {
         // ==========================================
         else if (locked_state == 2) {
             // 此时无人机算不出小车的相对坐标，只能依靠小车自身的记忆滑行
-            lost_cnt++;
+            
             
             if (lost_cnt <= COAST_CNT) {
+                lost_cnt++;
                 last_vx *= COAST_DECAY; 
                 last_vy *= COAST_DECAY;
                 Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); // 【修改点】
@@ -205,8 +206,9 @@ void Visual_Control_Loop(void) {
             } 
             // 如果信标在中心丢失，说明被车底遮挡，滑行 3 帧开出盲区
             else {
-                lost_cnt++;
+                
                 if (lost_cnt <= COAST_CNT) {
+                    lost_cnt++;
                     last_vx *= COAST_DECAY; 
                     last_vy *= COAST_DECAY;
                     Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); // 【修改点】
@@ -262,7 +264,7 @@ void Mecanum_Control_Loop(void) {
     // 根据车身坐标系 V_x, V_y, Omega 计算四个轮子的线速度
     // 注意：这里的正负号取决于电机安装方向和轮子类型 (A/B轮布局)
     // 典型布局：左前/右后为A轮，右前/左后为B轮
-    float center_v = target_vel.wz * (CAR_L + CAR_W);
+    float center_v = final_wz * (CAR_L + CAR_W);
 
     target_vel.v_lf = target_vel.vx - target_vel.vy - center_v;
     target_vel.v_rf = target_vel.vx + target_vel.vy + center_v;
