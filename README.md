@@ -96,3 +96,6 @@ imu位置更新，姿态角映射相应更改
 
 3.16a
 处理mecnum.c使之适合使用imu_car_data.yaw_total
+
+3.16b
+对visual_control_loop和mecnum做了更改，统一了速度设置的问题
