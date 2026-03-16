@@ -59,7 +59,7 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务�
     pit_isr_flag_clear(PIT_CH1);
     //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
     //Current_speed_display();
-    wireless_uart_output_target();
+    wireless_uart_output_encoder();
     //wireless_uart_output_motor();
 }
 

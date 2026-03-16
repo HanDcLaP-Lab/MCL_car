@@ -39,6 +39,7 @@
 #define EDGE_Y         70.0f    // 左右方向边缘视野界限 (cm)
 
 extern int EN;
+extern float f_t;
 // ================== 结构体定义 ==================
 typedef struct {
     float vx;       // X轴速度 (m/s)

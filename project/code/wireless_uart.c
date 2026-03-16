@@ -82,11 +82,11 @@ void wireless_uart_output_target(void){
     wireless_uart_send_string(",");
     wireless_uart_send_float(ang_out);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(dist_out);
+    wireless_uart_send_float(f_t);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_data.yaw);
+    wireless_uart_send_float(imu_car_data.yaw_total);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(uart_data[4]);
+    wireless_uart_send_float(target_vel.v_lf);
     wireless_uart_send_string("\n");
 }
 
@@ -105,16 +105,20 @@ void wireless_uart_output_imu(void){
     wireless_uart_send_string("\n");
 }
 void wireless_uart_output_encoder(void){
-    wireless_uart_send_float(motor_output.lf);
+    wireless_uart_send_float(encoder_data.lf);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(motor_output.rf);
+    wireless_uart_send_float(encoder_data.rf);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(motor_output.lb);
+    wireless_uart_send_float(encoder_data.lb);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(motor_output.rb);
+    wireless_uart_send_float(encoder_data.rb);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(ang_out);
+    wireless_uart_send_float(f_t);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_data.yaw);
+    wireless_uart_send_float(imu_car_data.yaw_total);
+    // wireless_uart_send_string(",");
+    // wireless_uart_send_float(ang_out);
+    // wireless_uart_send_string(",");
+    // wireless_uart_send_float(imu_car_data.yaw);
     wireless_uart_send_string("\n");
 }

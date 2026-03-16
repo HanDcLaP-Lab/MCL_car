@@ -3,6 +3,7 @@
 #include "zf_common_headfile.h"
 #include <math.h>
 int EN = 1;
+float f_t = 0;
 // [参数调整] 针对增量式PID (dt=0.001s) 的调优参数
 // KP=3500: 0.5m/s 误差时提供 1750 的基础PWM，确保启动有力
 // KI=3000: 0.5m/s 误差时每秒增加 1500 PWM (3000*0.5*0.001*1000)，消除静差只需约0.5-1秒
@@ -249,7 +250,7 @@ void Mecanum_Control_Loop(void) {
         // 判断：如果外部没有要求自转(wz近似为0)，则启动 Yaw 闭环锁死车头
         if (fabsf(target_vel.wz) < 0.05f) {
             // 目标永远指向0度
-            float yaw_error = 0.0f - imu_car_data.yaw_total; 
+            float yaw_error = 0.0 - imu_car_data.yaw_total; 
             
             // 这里的 PID 输出直接充当最终的旋转角速度
             final_wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);
@@ -258,16 +259,17 @@ void Mecanum_Control_Loop(void) {
             PID_Reset(&pid_yaw_hold); 
         }
     }
+    f_t = final_wz;
     // 3. 运动学逆解算 (Inverse Kinematics)
     // 根据车身坐标系 V_x, V_y, Omega 计算四个轮子的线速度
     // 注意：这里的正负号取决于电机安装方向和轮子类型 (A/B轮布局)
     // 典型布局：左前/右后为A轮，右前/左后为B轮
     float center_v = final_wz * (CAR_L + CAR_W);
 
-    target_vel.v_lf = target_vel.vx - target_vel.vy - center_v;
-    target_vel.v_rf = target_vel.vx + target_vel.vy + center_v;
-    target_vel.v_lb = target_vel.vx + target_vel.vy - center_v;
-    target_vel.v_rb = target_vel.vx - target_vel.vy + center_v;
+    target_vel.v_lf = target_vel.vx - target_vel.vy + center_v;
+    target_vel.v_rf = target_vel.vx + target_vel.vy - center_v;
+    target_vel.v_lb = target_vel.vx + target_vel.vy + center_v;
+    target_vel.v_rb = target_vel.vx - target_vel.vy - center_v;
 
     
     // 0.055 是 1ms 下 3200线编码器的最小分辨率
