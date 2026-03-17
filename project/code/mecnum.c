@@ -153,7 +153,7 @@ void Visual_Control_Loop(void) {
         // ==========================================
         if (locked_state == 3) {
             float dist = 0.0f, angle = 0.0f;
-            Image_Solve(imu_car_data.yaw, &dist, &angle);
+            Image_Solve(imu_car_rc_data.yaw, &dist, &angle);
 
             ang_out = angle;
             dist_out = dist;
@@ -235,7 +235,7 @@ void Mecanum_Control_Loop(void) {
     Encoder_GetCount();
     static uint8_t has_unlocked = 0;
 
-    if(imu_car_data.is_calibrated == 1){
+    if(imu_car_rc_data.is_calibrated == 1){
         if(has_unlocked == 0) {
             Mecanum_Unlock();
             has_unlocked = 1; // 标记已解锁，以后不再重复调用
@@ -250,7 +250,7 @@ void Mecanum_Control_Loop(void) {
         // 判断：如果外部没有要求自转(wz近似为0)，则启动 Yaw 闭环锁死车头
         if (fabsf(target_vel.wz) < 0.05f) {
             // 目标永远指向0度
-            float yaw_error = 0.0 - imu_car_data.yaw_total; 
+            float yaw_error = 0.0 - imu_car_rc_data.yaw_total; 
             
             // 这里的 PID 输出直接充当最终的旋转角速度
             final_wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);

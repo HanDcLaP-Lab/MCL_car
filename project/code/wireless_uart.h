@@ -14,4 +14,5 @@ void wireless_uart_output_pid(void);
 void wireless_uart_output_target(void);
 void wireless_uart_output_imu(void);
 void wireless_uart_output_encoder(void);
+void print_imu(void);
 #endif

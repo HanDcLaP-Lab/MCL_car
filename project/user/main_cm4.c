@@ -56,7 +56,7 @@ int main(void)
     system_delay_ms(1500);
     Board_Comm_Init();
 
-    IMU_Car_Init();
+    IMU_Car_RC_Init();
     Encoder_Init();
     Mecanum_Init();
     wireless_uart_init_();
@@ -67,7 +67,7 @@ int main(void)
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     pit_ms_init(PIT_CH0, 1);
-    while (imu_car_data.is_calibrated == 0) {
+    while (imu_car_rc_data.is_calibrated == 0) {
         Parse_Board_Uart_Data();
         seekfree_assistant_data_analysis();
         system_delay_ms(1); 

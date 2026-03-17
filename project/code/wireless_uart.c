@@ -67,7 +67,7 @@ void wireless_uart_output_pid(void){
     wireless_uart_send_string(",");
     wireless_uart_send_float(pid_lf.output);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_data.yaw); // 增量式PID积分项无意义，改为显示Yaw角
+    wireless_uart_send_float(imu_car_rc_data.yaw); // 增量式PID积分项无意义，改为显示Yaw角
     wireless_uart_send_string("\n");
 }
 
@@ -84,19 +84,20 @@ void wireless_uart_output_target(void){
     wireless_uart_send_string(",");
     wireless_uart_send_float(f_t);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_data.yaw_total);
+    wireless_uart_send_float(imu_car_rc_data.yaw_total);
     wireless_uart_send_string(",");
     wireless_uart_send_float(target_vel.v_lf);
     wireless_uart_send_string("\n");
 }
 
 void wireless_uart_output_imu(void){
-    wireless_uart_send_float(imu_car_data.pitch);
+    wireless_uart_send_float(imu_car_rc_data.pitch);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_data.roll);
+    wireless_uart_send_float(imu_car_rc_data.roll);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_data.yaw);
+    wireless_uart_send_float(imu_car_rc_data.yaw);
     wireless_uart_send_string(",");
+    wireless_uart_send_float(imu_car_rc_data.yaw_total);
     // wireless_uart_send_int(imu660rc_acc_x);
     // wireless_uart_send_string(",");
     // wireless_uart_send_int(imu660rc_acc_y);
@@ -115,10 +116,14 @@ void wireless_uart_output_encoder(void){
     wireless_uart_send_string(",");
     wireless_uart_send_float(f_t);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_data.yaw_total);
+    wireless_uart_send_float(imu_car_rc_data.yaw_total);
     // wireless_uart_send_string(",");
     // wireless_uart_send_float(ang_out);
     // wireless_uart_send_string(",");
-    // wireless_uart_send_float(imu_car_data.yaw);
+    // wireless_uart_send_float(imu_car_rc_data.yaw);
     wireless_uart_send_string("\n");
+}
+
+void print_imu(void){
+    printf("%f,%f,%f,%f\n",imu_car_rc_data.pitch , imu_car_rc_data.roll , imu_car_rc_data.yaw , imu_car_rc_data.yaw_total);
 }

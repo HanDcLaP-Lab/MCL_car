@@ -99,3 +99,6 @@ imu位置更新，姿态角映射相应更改
 
 3.16b,c
 对visual_control_loop和mecnum做了更改，统一了速度设置的问题
+
+3.17a
+将imu数据换成了逐飞提供的数据
