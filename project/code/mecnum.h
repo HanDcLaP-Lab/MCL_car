@@ -20,14 +20,14 @@
 #define OUT_MAX 7000.0f
 // ================== 硬件引脚定义 ==================
 // 电机 PWM 通道定义
-#define MOTOR_LF_PWM    TCPWM_CH14_P00_2    // 左前 PWM
-#define MOTOR_RF_PWM    TCPWM_CH51_P18_6    // 右前 PWM
+#define MOTOR_LF_PWM    TCPWM_CH50_P18_7    // 左前 PWM
+#define MOTOR_RF_PWM    TCPWM_CH13_P00_3    // 右前 PWM
 #define MOTOR_LB_PWM    TCPWM_CH54_P18_3    // 左后 PWM
 #define MOTOR_RB_PWM    TCPWM_CH00_P06_1    // 右后 PWM
 
 // 电机方向引脚定义
-#define MOTOR_LF_DIR    P00_3               // 左前 DIR
-#define MOTOR_RF_DIR    P18_7               // 右前 DIR
+#define MOTOR_LF_DIR    P18_6               // 左前 DIR
+#define MOTOR_RF_DIR    P00_2               // 右前 DIR
 #define MOTOR_LB_DIR    P18_4               // 左后 DIR
 #define MOTOR_RB_DIR    P06_3               // 右后 DIR
 
