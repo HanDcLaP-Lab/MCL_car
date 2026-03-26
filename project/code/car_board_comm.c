@@ -29,6 +29,7 @@ void Board_Comm_Init(void)
 {
     fifo_init(&board_rx_fifo, FIFO_DATA_8BIT, rx_buffer, 512);
     uart_init(BOARD_UART, BOARD_BAUDRATE, BOARD_TX_PIN, BOARD_RX_PIN);
+    pwm_init(MOTOR_RB_PWM, 17000, 0);
     uart_rx_interrupt(BOARD_UART, 1); 
 }
 
