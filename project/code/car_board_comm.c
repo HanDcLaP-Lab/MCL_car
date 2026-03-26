@@ -76,7 +76,7 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                     state = STEP_HEADER1;                    
                     // 仅在调试模式下打印报错
                     if (debug_en) {
-                        printf("\r\n[ERR] Checksum Fail! Cal:%02X, Rx:%02X\r\n", cal_checksum, read_byte);
+                        //printf("\r\n[ERR] Checksum Fail! Cal:%02X, Rx:%02X\r\n", cal_checksum, read_byte);
                     }
                 }
                 break;
@@ -93,12 +93,12 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                         rx_cnt++;
                         // [优化] 每接收50包打印一次，防止打印太快阻塞CPU
                         if (rx_cnt % 50 == 0) {
-                            printf("RxCnt:%d [OK] X:%.2f Y:%.2f\r\n", rx_cnt, uart_data[0], uart_data[1]);
+                            //printf("RxCnt:%d [OK] X:%.2f Y:%.2f\r\n", rx_cnt, uart_data[0], uart_data[1]);
                         }
                     }
                 } else {
                     if (debug_en) {
-                        printf("\r\n[ERR] Tail Fail! Expected:7F, Rx:%02X\r\n", read_byte);
+                        //printf("\r\n[ERR] Tail Fail! Expected:7F, Rx:%02X\r\n", read_byte);
                     }
                 }
                 state = STEP_HEADER1; 
