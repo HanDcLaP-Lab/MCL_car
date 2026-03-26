@@ -26,6 +26,7 @@ void test_program_1(void)
     system_delay_ms(2500);
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     system_delay_ms(3000);
+    Mecanum_Stop();
 }
 
 /**

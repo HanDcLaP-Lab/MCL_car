@@ -74,8 +74,7 @@ int main(void)
     }
     Mecanum_Unlock();
 
-    //test_program_1();
-    
+    test_program_1();
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
@@ -84,7 +83,7 @@ int main(void)
 
         if (board_rx_complete_flag) {
             board_rx_complete_flag = 0;
-            Visual_Control_Loop();
+            //Visual_Control_Loop();
         }
 
         seekfree_assistant_data_analysis();
@@ -111,7 +110,7 @@ int main(void)
         pid_rf.kp = KP; pid_rf.ki = KI; pid_rf.kd = KD; pid_rf.max_i = MAX_I;
         pid_lb.kp = KP; pid_lb.ki = KI; pid_lb.kd = KD; pid_lb.max_i = MAX_I;
         pid_rb.kp = KP; pid_rb.ki = KI; pid_rb.kd = KD; pid_rb.max_i = MAX_I;
-        
+        pid_yaw_hold.kp = YAW_KP; pid_yaw_hold.ki = YAW_KI; pid_yaw_hold.kd = YAW_KD; pid_yaw_hold.max_i = YAW_MAX_I;
         
         // 此处编写需要循环执行的代码
     }
@@ -130,7 +129,13 @@ void Wireless_Update(uint8_t ch, float val) {
             KD = val;
             break;
         case 4:
-            MAX_I = val;
+            YAW_KP = val;
+            break;
+        case 5:
+            YAW_KI = val;
+            break;
+        case 6:
+            YAW_KD = val;
             break;
         case 8:
             if(val == 1){
@@ -139,6 +144,7 @@ void Wireless_Update(uint8_t ch, float val) {
             if(val== 0){
                 //wireless_uart_send_string("done");
                 Mecanum_Unlock();
+                test_program_1();
             }
         default:
             break;
