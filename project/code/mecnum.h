@@ -16,6 +16,12 @@
 #define CONTROL_DT      0.001f   
 #define VISUAL_DT       0.020f
 
+// 【新增】加速度限制 (单位: m/s^2 和 rad/s^2)
+// 例如: 2.0m/s^2 意味着从 0 加速到 1.0m/s 需要 0.5秒
+#define MAX_ACCEL_X  4.0f
+#define MAX_ACCEL_Y  2.0f
+#define MAX_ACCEL_W  10.0f
+
 
 #define OUT_MAX 7000.0f
 // ================== 硬件引脚定义 ==================

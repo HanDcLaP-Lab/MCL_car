@@ -8,10 +8,10 @@ void Encoder_Init(){
     encoder_quad_init(ENCODER_QUAD_rf, ENCODER_QUAD_rf_PHASE_A, ENCODER_QUAD_rf_PHASE_B);  // 初始化编码器模块与引脚 正交编码器模式
     encoder_quad_init(ENCODER_QUAD_lb, ENCODER_QUAD_lb_PHASE_A, ENCODER_QUAD_lb_PHASE_B);  // 初始化编码器模块与引脚 正交编码器模式
     encoder_quad_init(ENCODER_QUAD_rb, ENCODER_QUAD_rb_PHASE_A, ENCODER_QUAD_rb_PHASE_B);  // 初始化编码器模块与引脚 正交编码器模式
-    Kalman_Init(&K_lf, 0.01f, 1.0f, 0.0f);
-    Kalman_Init(&K_rf, 0.01f, 1.0f, 0.0f);
-    Kalman_Init(&K_lb, 0.01f, 1.0f, 0.0f);
-    Kalman_Init(&K_rb, 0.01f, 1.0f, 0.0f);
+    Kalman_Init(&K_lf, 0.1f, 1.0f, 0.0f);
+    Kalman_Init(&K_rf, 0.1f, 1.0f, 0.0f);
+    Kalman_Init(&K_lb, 0.1f, 1.0f, 0.0f);
+    Kalman_Init(&K_rb, 0.1f, 1.0f, 0.0f);
 }
 
 void Encoder_GetCount(){

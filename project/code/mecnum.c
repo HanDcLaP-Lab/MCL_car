@@ -8,7 +8,7 @@ float f_t = 0;
 // KP=3500: 0.5m/s 误差时提供 1750 的基础PWM，确保启动有力
 // KI=3000: 0.5m/s 误差时每秒增加 1500 PWM (3000*0.5*0.001*1000)，消除静差只需约0.5-1秒
 // KD=0: 速度环通常不需要微分项，除非超调严重
-float KP=1500.0f, KI=5400.0f, KD=0.0f, MAX_I=3500.0f;
+float KP=2600.0f, KI=6900.0f, KD=0.0f, MAX_I=3500.0f;
 
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;//速度环pid
@@ -22,6 +22,12 @@ float YAW_KP=0.075f, YAW_KI=0.0f, YAW_KD=0.001f, YAW_MAX_I=0.01f, YAW_OUT_MAX=4.
 Target_t target_vel = {0};//目标运行情况
 Motor_Output_t motor_output = {0};
 float ang_out=0,dist_out=0;
+
+// 【新增】斜坡函数相关的平滑速度变量
+float smooth_vx = 0.0f;
+float smooth_vy = 0.0f;
+float smooth_wz = 0.0f;
+
 
 // ================== 内部辅助函数 ==================
 
@@ -96,7 +102,11 @@ void Mecanum_Init(void) {
 
 void Mecanum_Stop(void) {
     target_vel.unlock = false;
+    EN = 0;
 
+    smooth_vx = 0.0f;
+    smooth_vy = 0.0f;
+    smooth_wz = 0.0f;
     Mecanum_Set_Velocity(0, 0, 0);
     pwm_set_duty(MOTOR_LF_PWM, 0);
     pwm_set_duty(MOTOR_RF_PWM, 0);
@@ -118,7 +128,10 @@ void Mecanum_Stop(void) {
 
 void Mecanum_Unlock(void) {
     target_vel.unlock = true;
-
+    EN = 1;
+    smooth_vx = 0.0f;
+    smooth_vy = 0.0f;
+    smooth_wz = 0.0f;
     Mecanum_Set_Velocity(0, 0, 0);
     pwm_set_duty(MOTOR_LF_PWM, 0);
     pwm_set_duty(MOTOR_RF_PWM, 0);
@@ -244,6 +257,7 @@ void Mecanum_Control_Loop(void) {
         Mecanum_Stop();
         return;
     }
+    
     // 2. Yaw角闭环 (周期 1ms)
     float final_wz = target_vel.wz; // 默认采用外部设定的期望自转速度
     if (target_vel.unlock) {
@@ -260,16 +274,46 @@ void Mecanum_Control_Loop(void) {
         }
     }
     f_t = final_wz;
+
+    // ==========================================================
+    // 【新增】斜坡函数 (速度规划)
+    // 根据设定的最大加速度，限制每 1ms (CONTROL_DT) 的速度变化量
+    // ==========================================================
+    if (target_vel.unlock) {
+        float step_x = MAX_ACCEL_X * CONTROL_DT;
+        float step_y = MAX_ACCEL_Y * CONTROL_DT;
+        float step_w = MAX_ACCEL_W * CONTROL_DT;
+
+        // X轴 (前后) 速度斜坡
+        if (target_vel.vx > smooth_vx + step_x) smooth_vx += step_x;
+        else if (target_vel.vx < smooth_vx - step_x) smooth_vx -= step_x;
+        else smooth_vx = target_vel.vx;
+
+        // Y轴 (左右) 速度斜坡
+        if (target_vel.vy > smooth_vy + step_y) smooth_vy += step_y;
+        else if (target_vel.vy < smooth_vy - step_y) smooth_vy -= step_y;
+        else smooth_vy = target_vel.vy;
+
+        // Z轴 (自转) 速度斜坡 (使用融合了Yaw锁死环的 final_wz)
+        if (final_wz > smooth_wz + step_w) smooth_wz += step_w;
+        else if (final_wz < smooth_wz - step_w) smooth_wz -= step_w;
+        else smooth_wz = final_wz;
+    } else {
+        // 如果未解锁，平滑速度强制归零
+        smooth_vx = 0.0f;
+        smooth_vy = 0.0f;
+        smooth_wz = 0.0f;
+    }
+
     // 3. 运动学逆解算 (Inverse Kinematics)
     // 根据车身坐标系 V_x, V_y, Omega 计算四个轮子的线速度
-    // 注意：这里的正负号取决于电机安装方向和轮子类型 (A/B轮布局)
-    // 典型布局：左前/右后为A轮，右前/左后为B轮
-    float center_v = final_wz * (CAR_L + CAR_W);
+    // 【修改点】此处使用平滑后的 smooth 变量进行解算
+    float center_v = smooth_wz * (CAR_L + CAR_W);
 
-    target_vel.v_lf = target_vel.vx - target_vel.vy + center_v;
-    target_vel.v_rf = target_vel.vx + target_vel.vy - center_v;
-    target_vel.v_lb = target_vel.vx + target_vel.vy + center_v;
-    target_vel.v_rb = target_vel.vx - target_vel.vy - center_v;
+    target_vel.v_lf = smooth_vx - smooth_vy + center_v;
+    target_vel.v_rf = smooth_vx + smooth_vy - center_v;
+    target_vel.v_lb = smooth_vx + smooth_vy + center_v;
+    target_vel.v_rb = smooth_vx - smooth_vy - center_v;
 
     
     // 0.055 是 1ms 下 3200线编码器的最小分辨率
@@ -278,7 +322,7 @@ void Mecanum_Control_Loop(void) {
     float err_lb = target_vel.v_lb - encoder_data.lb;
     float err_rb = target_vel.v_rb - encoder_data.rb;
 
-    // 3. PID 计算
+    // 4. PID 计算
     if (target_vel.unlock) {
         motor_output.lf = EN * PID_Calculate_Incremental(&pid_lf, err_lf, CONTROL_DT);
         motor_output.rf = EN * PID_Calculate_Incremental(&pid_rf, err_rf, CONTROL_DT);
@@ -286,8 +330,6 @@ void Mecanum_Control_Loop(void) {
         motor_output.rb = EN * PID_Calculate_Incremental(&pid_rb, err_rb, CONTROL_DT);
 
         // 简单的误差死区处理，防止静止时电机抖动
-        // 误差死区仅在目标速度为0时启用，防止运动中输出被锁死在当前值
-        // 如果在运动中强制 err=0，增量式PID会保持当前的高PWM输出，导致无法减速
         if (fabsf(target_vel.v_lf) < 0.01f && fabsf(err_lf) < 0.03f) motor_output.lf = 0;
         if (fabsf(target_vel.v_rf) < 0.01f && fabsf(err_rf) < 0.03f) motor_output.rf = 0;
         if (fabsf(target_vel.v_lb) < 0.01f && fabsf(err_lb) < 0.03f) motor_output.lb = 0;
@@ -299,7 +341,7 @@ void Mecanum_Control_Loop(void) {
         motor_output.rb = 0;
     }
 
-    // 4. 执行电机控制
+    // 5. 执行电机控制
     if (target_vel.unlock == true) {
         Motor_Set_Output(MOTOR_LF_PWM, MOTOR_LF_DIR, motor_output.lf);
         Motor_Set_Output(MOTOR_RF_PWM, MOTOR_RF_DIR, motor_output.rf);
