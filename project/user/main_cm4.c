@@ -62,7 +62,7 @@ int main(void)
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     
-    pit_ms_init(PIT_CH1, 100);
+    pit_ms_init(PIT_CH1, 40);
     //pit_ms_init(PIT_CH2, 20); // 视觉控制周期 20ms
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
@@ -143,13 +143,13 @@ int main(void)
 void Wireless_Update(uint8_t ch, float val) {
     switch (ch) {
         case 1:
-            KP = val;
+            YAW_RATE_KP = val;
             break;
         case 2:
-            KI = val;
+            YAW_RATE_KI = val;
             break;
         case 3:
-            KD = val;
+            YAW_RATE_KD = val;
             break;
         case 4:
             YAW_KP = val;

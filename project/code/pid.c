@@ -86,11 +86,11 @@ float PID_Calculate_Incremental(PID_t *pid, float error, float dt) {
     pid->output += delta_output;
 
     // 输出限幅
-    if (pid->output > pid->out_max) {
-        pid->output = pid->out_max;
-    } else if (pid->output < -pid->out_max) {
-        pid->output = -pid->out_max;
-    }
+    // if (pid->output > pid->out_max) {
+    //     pid->output = pid->out_max;
+    // } else if (pid->output < -pid->out_max) {
+    //     pid->output = -pid->out_max;
+    // }
 
     // 更新历史误差
     pid->prev_prev_error = pid->prev_error;

@@ -18,8 +18,8 @@
 
 // 【新增】加速度限制 (单位: m/s^2 和 rad/s^2)
 // 例如: 2.0m/s^2 意味着从 0 加速到 1.0m/s 需要 0.5秒
-#define MAX_ACCEL_X  4.0f
-#define MAX_ACCEL_Y  2.0f
+#define MAX_ACCEL_X  8.0f
+#define MAX_ACCEL_Y  8.0f
 #define MAX_ACCEL_W  10.0f
 
 
@@ -76,6 +76,13 @@ extern PID_t pid_pos_x, pid_pos_y;
 extern float KP,KI,KD,MAX_I;
 extern float YAW_KP, YAW_KI, YAW_KD, YAW_MAX_I, YAW_OUT_MAX;
 extern Target_t target_vel;
+
+// 在 extern PID_t pid_yaw_hold; 下方添加：
+extern PID_t pid_yaw_rate;
+
+// 在 extern float YAW_KP... 下方添加内环参数声明：
+extern float YAW_RATE_KP, YAW_RATE_KI, YAW_RATE_KD, YAW_RATE_MAX_I, YAW_RATE_OUT_MAX;
+
 extern Motor_Output_t motor_output;
 extern float ang_out,dist_out;
 /**
