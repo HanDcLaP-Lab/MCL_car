@@ -27,7 +27,7 @@ void Image_Solve(float car_yaw, float *dist, float *angle) {
     *dist = (float)sqrt(dx * dx + dy * dy);
 
     // 3. 坐标系旋转: 无人机坐标系 -> 小车坐标系
-    // 两者定义一致(X前Y右)，Yaw均为顺时针正
+    // 下传数据X前Y右，小车X前Y左，Yaw均为顺时针正
     // 旋转角 delta = Car_Yaw - Drone_Yaw
     double delta_rad = ((double)car_yaw - yaw_drone) * (M_PI / 180.0);
 
@@ -36,6 +36,8 @@ void Image_Solve(float car_yaw, float *dist, float *angle) {
     // dy_car = -dx * sin(delta) + dy * cos(delta)
     double dx_car = dx * cos(delta_rad) + dy * sin(delta_rad);
     double dy_car = -dx * sin(delta_rad) + dy * cos(delta_rad);
+
+    dy_car = -dy_car; // Y轴取反适配小车坐标系
 
     // 4. 计算角度 (0度为车头, 90度为车右, 符合 atan2(y, x) 定义)
     *angle = (float)(atan2(dy_car, dx_car) * 180.0 / M_PI);

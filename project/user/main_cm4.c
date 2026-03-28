@@ -74,7 +74,7 @@ int main(void)
     }
     Mecanum_Unlock();
 
-    test_program_1();
+    //test_program_1();
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
@@ -85,29 +85,29 @@ int main(void)
 
         static uint32_t drone_timeout_cnt = 0; // [新增] 无人机通讯看门狗计数器
 
-        // if (board_rx_complete_flag) {
-        //     board_rx_complete_flag = 0;
+        if (board_rx_complete_flag) {
+            board_rx_complete_flag = 0;
             
-        //     // 【核心修复：断连恢复】如果之前处于失联保护状态，现在重新连上了，必须恢复动力！
-        //     if (drone_timeout_cnt >= 300) {
-        //         EN = 1;             // 恢复 PID 输出使能
-        //         Mecanum_Unlock();   // 恢复底层控制锁
-        //     }
+            // 【核心修复：断连恢复】如果之前处于失联保护状态，现在重新连上了，必须恢复动力！
+            if (drone_timeout_cnt >= 300) {
+                EN = 1;             // 恢复 PID 输出使能
+                Mecanum_Unlock();   // 恢复底层控制锁
+            }
             
-        //     drone_timeout_cnt = 0; // 成功收到无人机数据，喂狗清零
-        //     //Visual_Control_Loop();
-        // } else {
-        //     drone_timeout_cnt++;
-        //     // 主循环中有 system_delay_ms(1)，因此每次自增大约是 1ms 
-        //     if (drone_timeout_cnt > 300) { // 超过 300ms 没收到通讯
+            drone_timeout_cnt = 0; // 成功收到无人机数据，喂狗清零
+            Visual_Control_Loop();
+        } else {
+            drone_timeout_cnt++;
+            // 主循环中有 system_delay_ms(1)，因此每次自增大约是 1ms 
+            if (drone_timeout_cnt > 300) { // 超过 300ms 没收到通讯
                 
-        //         // 【核心修改：直接底层停车】不需要再调用视觉环了
-        //         EN = 0;               // 1. 切断 PID 最终输出
-        //         Mecanum_Stop();       // 2. 清空目标速度、清空 PID 积分、锁定底盘 PWM
+                // 【核心修改：直接底层停车】不需要再调用视觉环了
+                EN = 0;               // 1. 切断 PID 最终输出
+                Mecanum_Stop();       // 2. 清空目标速度、清空 PID 积分、锁定底盘 PWM
                 
-        //         drone_timeout_cnt = 300; // 卡住计数器防止溢出
-        //     }
-        // }
+                drone_timeout_cnt = 300; // 卡住计数器防止溢出
+            }
+        }
 
         seekfree_assistant_data_analysis();
 
@@ -165,10 +165,18 @@ void Wireless_Update(uint8_t ch, float val) {
               Mecanum_Stop();
             }
             if(val== 0){
-                //wireless_uart_send_string("done");
                 Mecanum_Unlock();
-                test_program_1();
+                //test_program_1();
+                
+                seekfree_assistant_data_analysis();
+
+                for (int i = 0; i < SEEKFREE_ASSISTANT_SET_PARAMETR_COUNT; i++) {
+                    if (seekfree_assistant_parameter_update_flag[i]) {
+                        seekfree_assistant_parameter_update_flag[i] = 0;
+                    }
+                }
             }
+            break;
         default:
             break;
     }
