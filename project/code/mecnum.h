@@ -10,7 +10,7 @@
 #define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.028f   // 轮子半径
 #define PWM_MAX_M       7000.0f  // PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
-#define TARGET_SPEED    0.7f     // 目标速度 (m/s)
+#define TARGET_SPEED    0.25f     // 目标速度 (m/s)
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f   
@@ -39,10 +39,11 @@
 
 //记忆功能
 // 记忆与视觉边界功能
-#define COAST_CNT      3        // 目标丢失后的记忆滑行帧数 (每帧约20ms，3帧即60ms)
-#define COAST_DECAY    0.998f   // 速度衰减系数 (每次循环衰减)
-#define EDGE_X         50.0f    // 前后方向边缘视野界限 (cm)
-#define EDGE_Y         70.0f    // 左右方向边缘视野界限 (cm)
+#define COAST_CNT      20        // 目标丢失后的记忆滑行帧数 (每帧约20ms，3帧即60ms)
+#define EDGE_CNT  30
+#define COAST_DECAY    1.0f   // 速度衰减系数 (每次循环衰减)
+//#define EDGE_X         50.0f    // 前后方向边缘视野界限 (cm)
+#define EDGE_Y         300.0f    // 左右方向边缘视野界限 (cm)
 
 extern int EN;
 extern float f_t;

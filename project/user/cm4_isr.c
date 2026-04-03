@@ -62,6 +62,12 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务�
     //wireless_uart_output_imu();
     //print_imu();
     //wireless_uart_output_encoder();
+    // printf("%.2f," , uart_data[0]);
+    // printf("%.2f," , uart_data[1]);
+    // printf("%.2f," , uart_data[2]);
+    // printf("%.2f," , uart_data[6]);
+    // printf("%.2f\n" , uart_data[3]);
+
 }
 
 void pit0_ch2_isr()                     // 定时器通道 2 周期中断服务函数      

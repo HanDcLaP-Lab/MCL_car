@@ -184,11 +184,13 @@ void Mecanum_Unlock(void) {
     PID_Reset(&pid_yaw_rate);
 }
 void Visual_Control_Loop(void) {
-    static uint8_t lost_cnt = 0;
+    static uint16_t lost_cnt = 0;
     static float last_vx = 0.0f;
     static float last_vy = 0.0f;
-    static uint8_t is_edge = 0;
+    static uint16_t is_edge = 0;
+    static uint16_t edge_lost_cnt = 0;
 
+    static uint16_t target_edge_cnt = 0;
     if (target_vel.unlock) {
         // 解析无人机下发的位掩码状态
         // 0: 全丢, 1: 仅小车, 2: 仅信标, 3: 都有
@@ -208,12 +210,11 @@ void Visual_Control_Loop(void) {
             dist_out = dist;
 
             float current_speed = TARGET_SPEED;
-            if (dist < 8.0f) { 
-                current_speed = 0.0f; // 死区刹车
-            } else if (dist < 35.0f) {
-                current_speed = TARGET_SPEED * (dist / 35.0f); // 比例减速
-                if (current_speed < 0.15f) current_speed = 0.15f; 
-            }
+             if (dist < 20.0f)   current_speed = 0.35f; // 死区刹车
+            // } else if (dist < 35.0f) {
+            //     current_speed = TARGET_SPEED * (dist / 35.0f); // 比例减速
+            //     if (current_speed < 0.15f) current_speed = 0.15f; 
+            // }
 
             float angle_rad = angle * (float)(3.1415926f / 180.0f);
             float target_speed_x = current_speed * cosf(angle_rad);
@@ -225,9 +226,15 @@ void Visual_Control_Loop(void) {
             last_vx = target_speed_x;
             last_vy = target_speed_y;
             lost_cnt = 0; 
+            edge_lost_cnt = 0;
 
             // 记录丢失前的一瞬间，信标是否在视野边缘 (X边界40cm，Y边界70cm)
-            is_edge = (fabsf(uart_data[2]) > EDGE_X) || (fabsf(uart_data[3]) > EDGE_Y);
+            is_edge = (fabsf(uart_data[3]) > EDGE_Y);
+            if(is_edge){
+                target_edge_cnt++;
+            }else{
+                target_edge_cnt = 0;
+            }
         } 
         // ==========================================
         // 状态 2：仅信标 (小车丢失)
@@ -244,6 +251,7 @@ void Visual_Control_Loop(void) {
             } else {
                 Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
             }
+            target_edge_cnt = 0;
         }
         // ==========================================
         // 状态 1：仅小车 (信标丢失)
@@ -251,7 +259,15 @@ void Visual_Control_Loop(void) {
         else if (locked_state == 1) {
             // 如果信标在边缘丢失，立刻刹车，配合无人机原地扫圈搜索
             if (is_edge) {
+                edge_lost_cnt ++;
+                if(target_edge_cnt < 5){
+                    edge_lost_cnt = EDGE_CNT + 1;
+                }
+                if(edge_lost_cnt < EDGE_CNT){
+                Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+                }else{
                 Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
+                }
                 lost_cnt = COAST_CNT + 1; // 强制超时，防止后续误触发
             } 
             // 如果信标在中心丢失，说明被车底遮挡，滑行 3 帧开出盲区
@@ -274,6 +290,7 @@ void Visual_Control_Loop(void) {
             // 没有任何参考物，直接强制急停
             Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
             lost_cnt = COAST_CNT + 1; 
+            target_edge_cnt = 0;
         }
     }
 }

@@ -89,7 +89,7 @@ int main(void)
             board_rx_complete_flag = 0;
             
             // 【核心修复：断连恢复】如果之前处于失联保护状态，现在重新连上了，必须恢复动力！
-            if (drone_timeout_cnt >= 300) {
+            if (drone_timeout_cnt >= 1000) {
                 EN = 1;             // 恢复 PID 输出使能
                 Mecanum_Unlock();   // 恢复底层控制锁
             }
@@ -99,13 +99,13 @@ int main(void)
         } else {
             drone_timeout_cnt++;
             // 主循环中有 system_delay_ms(1)，因此每次自增大约是 1ms 
-            if (drone_timeout_cnt > 300) { // 超过 300ms 没收到通讯
+            if (drone_timeout_cnt > 1000) { // 超过 300ms 没收到通讯
                 
                 // 【核心修改：直接底层停车】不需要再调用视觉环了
                 EN = 0;               // 1. 切断 PID 最终输出
                 Mecanum_Stop();       // 2. 清空目标速度、清空 PID 积分、锁定底盘 PWM
                 
-                drone_timeout_cnt = 300; // 卡住计数器防止溢出
+                drone_timeout_cnt = 1000; // 卡住计数器防止溢出
             }
         }
 

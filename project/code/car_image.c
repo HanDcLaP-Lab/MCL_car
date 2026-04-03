@@ -12,7 +12,7 @@ void Image_Init(void) {
 }
 void Image_Solve(float car_yaw, float *dist, float *angle) {
     extern float uart_data[8];
-    // 直接获取无人机解算好的物理坐标 (单位: 米)
+    // 直接获取无人机解算好的物理坐标 (单位: cm)
     double x_car = (double)uart_data[0];
     double y_car = (double)uart_data[1];
     double x_target = (double)uart_data[2];
