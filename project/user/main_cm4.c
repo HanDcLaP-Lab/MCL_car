@@ -45,7 +45,8 @@
 
 // **************************** 代码区域 ****************************
 extern volatile uint8_t board_rx_complete_flag;
-
+//extern int32_t cnt;
+//int mv_en = 0;
 void Wireless_Update(uint8_t ch, float val);
 int main(void)
 {
@@ -82,6 +83,10 @@ int main(void)
         // 此处编写需要循环执行的代码
         // 此处编写需要循环执行的代码
         Parse_Board_Uart_Data();
+        // if(cnt > 20000){
+        //     test_program_1();
+        // }
+        
 
         static uint32_t drone_timeout_cnt = 0; // [新增] 无人机通讯看门狗计数器
 

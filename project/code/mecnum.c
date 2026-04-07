@@ -13,7 +13,6 @@ float KP=3500.0f, KI=20000.0f, KD=0.0f, MAX_I=4500.0f;
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;//速度环pid
 PID_t pid_yaw_hold;//角度环pid
-PID_t pid_pos_x, pid_pos_y; // 位置环pid
 PID_t pid_yaw_rate;
 // [位置环参数] 1cm误差对应0.015m/s速度
 float POS_KP=0.015f, POS_KI=0.0f, POS_KD=0.0f, POS_MAX_I=0.5f, POS_OUT_MAX=1.0f;
@@ -123,8 +122,6 @@ void Mecanum_Init(void) {
     PID_Init(&pid_lb, KP, KI, KD, MAX_I, OUT_MAX);
     PID_Init(&pid_rb, KP, KI, KD, MAX_I, OUT_MAX);
     PID_Init(&pid_yaw_hold, YAW_KP, YAW_KI, YAW_KD, YAW_MAX_I, YAW_OUT_MAX);
-    PID_Init(&pid_pos_x, POS_KP, POS_KI, POS_KD, POS_MAX_I, POS_OUT_MAX);
-    PID_Init(&pid_pos_y, POS_KP, POS_KI, POS_KD, POS_MAX_I, POS_OUT_MAX);
     PID_Init(&pid_yaw_rate, YAW_RATE_KP, YAW_RATE_KI, YAW_RATE_KD, YAW_RATE_MAX_I, YAW_RATE_OUT_MAX);
 
     // 4. 初始化目标值
@@ -153,8 +150,6 @@ void Mecanum_Stop(void) {
     PID_Reset(&pid_lb);
     PID_Reset(&pid_rb);
     PID_Reset(&pid_yaw_hold);
-    PID_Reset(&pid_pos_x);
-    PID_Reset(&pid_pos_y);
     PID_Reset(&pid_yaw_rate);
 
     motor_output.lf = 0; motor_output.rf = 0;

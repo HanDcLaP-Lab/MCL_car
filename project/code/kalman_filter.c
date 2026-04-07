@@ -2,7 +2,6 @@
 #include "kalman_filter.h"
 #include "zf_common_headfile.h"
 
-KalmanFilter1 K_w;  // ¿¨¶ûÂü¶¨Òå
 void Kalman_Init(KalmanFilter1* kf, float q, float r, float initial_value) {
     kf->q = q;
     kf->r = r;

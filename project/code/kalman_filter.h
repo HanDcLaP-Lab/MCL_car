@@ -11,5 +11,4 @@ typedef struct {
 
 void Kalman_Init(KalmanFilter1* kf, float q, float r, float initial_value);
 float Kalman_Update(KalmanFilter1* kf, float measurement) ;
-extern KalmanFilter1 K_w;
 #endif

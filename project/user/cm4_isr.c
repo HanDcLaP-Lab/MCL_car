@@ -38,7 +38,6 @@
 #include "mecnum.h"
 #include "imu_car.h"
 
-int32_t num = 0;
 int32_t cnt = 0;
 // **************************** PIT中断函数 ****************************
 void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务函数      
@@ -46,7 +45,6 @@ void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务�
     pit_isr_flag_clear(PIT_CH0);
     tsl1401_collect_pit_handler(); ///逐飞库空例程自带，意义不明
     
-    cnt++;
     IMU_Car_RC_Update_Loop();
 
     Mecanum_Control_Loop();

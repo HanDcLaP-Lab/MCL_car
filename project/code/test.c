@@ -20,12 +20,18 @@ void test_program_0(void)
 void test_program_1(void)
 {
     Mecanum_Unlock();
-    Mecanum_Set_Velocity(0.0f, 0.15f, 0.0f);
-    system_delay_ms(2500);
-    Mecanum_Set_Velocity(0.0f, - 0.15f, 0.0f);
-    system_delay_ms(2500);
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(3000);
+
+    while(1){
+        Mecanum_Set_Velocity(0.25f, 0.0f, 0.0f);
+        system_delay_ms(5000);
+        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+        system_delay_ms(2000);
+        Mecanum_Set_Velocity(-0.25f, 0.0f, 0.0f);
+        system_delay_ms(5000);
+        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+        system_delay_ms(2000);
+    }
+    
     Mecanum_Stop();
 }
 
