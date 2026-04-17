@@ -83,6 +83,7 @@ int main(void)
         // 此处编写需要循环执行的代码
         // 此处编写需要循环执行的代码
         Parse_Board_Uart_Data();
+        if(uart_data[6] < 0.5f) EN = 0;
         // if(cnt > 20000){
         //     test_program_1();
         // }
