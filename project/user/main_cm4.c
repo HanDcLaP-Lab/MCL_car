@@ -60,14 +60,15 @@ int main(void)
     IMU_Car_RC_Init();
     Encoder_Init();
     Mecanum_Init();
+    EKF_Init(&chassis_ekf, 0.15f); 
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     
-    pit_ms_init(PIT_CH1, 40);
+    pit_ms_init(PIT_CH1, 40); //打印中断
     //pit_ms_init(PIT_CH2, 20); // 视觉控制周期 20ms
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    pit_ms_init(PIT_CH0, 1);
+    pit_us_init(PIT_CH0, 2100); // 将控制周期改为 2.1ms (2100微秒) 匹配 480Hz IMU
     while (imu_car_rc_data.is_calibrated == 0) {
         Parse_Board_Uart_Data();
         seekfree_assistant_data_analysis();
@@ -75,7 +76,7 @@ int main(void)
     }
     Mecanum_Unlock();
 
-    //test_program_1();
+    //test_program_2();
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {

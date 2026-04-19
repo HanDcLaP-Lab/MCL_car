@@ -37,6 +37,9 @@ typedef struct {
     float yaw_total;    // 范围 -inf ~ +inf (连续累计角度，用于多圈控制)
     float yaw_rate;     // Z轴角速度 (度/秒)，用于 PID D项，极重要！
     
+    float ax; //车体系加速度，向前x向右y，单位m/s2
+    float ay;
+    float az;
     // --- 状态标志 ---
     uint8_t is_calibrated; 
 } IMU_Car_RC_Data_t;

@@ -13,7 +13,7 @@
 #define TARGET_SPEED    0.25f     // 目标速度 (m/s)
 
 // 控制周期 (秒)
-#define CONTROL_DT      0.001f   
+#define CONTROL_DT      0.0021f   
 #define VISUAL_DT       0.020f
 
 // 【新增】加速度限制 (单位: m/s^2 和 rad/s^2)

@@ -1,14 +1,54 @@
 #ifndef _KALMAN_FILTER_H
 #define _KALMAN_FILTER_H
 
+#include "arm_math.h"
 typedef struct {
-    float x;  // ×´Ì¬±äÁ¿£¨¹À¼ÆµÄËÙ¶È/Âö³åÊı£©
-    float p;  // ¹À¼ÆĞ­·½²î
-    float q;  // ¹ı³ÌÔëÉùĞ­·½²î£¨ÏµÍ³Ä£ĞÍµÄ²»È·¶¨ĞÔ£©
-    float r;  // ²âÁ¿ÔëÉùĞ­·½²î£¨´«¸ĞÆ÷ÔëÉù£©
-    float k;  // ¿¨¶ûÂüÔöÒæ
+    float x;  // çŠ¶æ€å˜é‡ï¼ˆä¼°è®¡çš„é€Ÿåº¦/è„‰å†²æ•°ï¼‰
+    float p;  // ä¼°è®¡åæ–¹å·®
+    float q;  // è¿‡ç¨‹å™ªå£°åæ–¹å·®ï¼ˆç³»ç»Ÿæ¨¡å‹çš„ä¸ç¡®å®šæ€§ï¼‰
+    float r;  // æµ‹é‡å™ªå£°åæ–¹å·®ï¼ˆä¼ æ„Ÿå™¨å™ªå£°ï¼‰
+    float k;  // å¡å°”æ›¼å¢ç›Š
 } KalmanFilter1;
 
 void Kalman_Init(KalmanFilter1* kf, float q, float r, float initial_value);
 float Kalman_Update(KalmanFilter1* kf, float measurement) ;
+
+
+// =====================================================================
+// éº¦å…‹çº³å§†è½®åº•ç›˜æ‰©å±•å¡å°”æ›¼æ»¤æ³¢å™¨ (EKF) å®šä¹‰
+// =====================================================================
+#define EKF_STATE_DIM 5  // çŠ¶æ€å‘é‡ç»´åº¦
+#define EKF_OBS_DIM 2    // è§‚æµ‹å‘é‡ç»´åº¦
+
+typedef struct {
+    // çŠ¶æ€å‘é‡: [X_world, Y_world, Theta_world, V_x_body, V_y_body]^T
+    float X_data[EKF_STATE_DIM];
+    
+    // åæ–¹å·®çŸ©é˜µ P (5x5)
+    float P_data[EKF_STATE_DIM * EKF_STATE_DIM];
+    
+    // è¿‡ç¨‹å™ªå£°åæ–¹å·®çŸ©é˜µ Q (5x5)
+    float Q_data[EKF_STATE_DIM * EKF_STATE_DIM];
+    
+    // è§‚æµ‹å™ªå£°åæ–¹å·®çŸ©é˜µ R (2x2) ä»¥åŠå…¶é»˜è®¤å€¼
+    float R_data[EKF_OBS_DIM * EKF_OBS_DIM];
+    float R_default_data[EKF_OBS_DIM * EKF_OBS_DIM];
+
+    // CMSIS-DSP çŸ©é˜µå®ä¾‹
+    arm_matrix_instance_f32 X;
+    arm_matrix_instance_f32 P;
+    arm_matrix_instance_f32 Q;
+    arm_matrix_instance_f32 R;
+
+    // æ‰“æ»‘åˆ¤å®šé˜ˆå€¼
+    float slip_threshold;
+} Mecanum_EKF_t; 
+
+extern Mecanum_EKF_t chassis_ekf;
+
+void EKF_Init(Mecanum_EKF_t *ekf, float slip_thresh);
+void EKF_Step(Mecanum_EKF_t *ekf, float ax, float ay, float omega, 
+              float v1, float v2, float v3, float v4, float dt);
+
+
 #endif
