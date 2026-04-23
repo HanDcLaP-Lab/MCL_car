@@ -44,14 +44,6 @@ void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务�
     tsl1401_collect_pit_handler(); ///逐飞库空例程自带，意义不明
     
     IMU_Car_RC_Update_Loop();
-    Encoder_GetCount();
-
-    //EKF
-    float gyro_wz = imu_car_rc_data.yaw_rate * (3.1415926f / 180.0f);
-    EKF_Step(&chassis_ekf, 
-             imu_car_rc_data.ax, imu_car_rc_data.ay, gyro_wz, 
-             encoder_data.lf, encoder_data.rf, encoder_data.lb, encoder_data.rb, 
-             CONTROL_DT);
 
     Mecanum_Control_Loop();
       
@@ -63,7 +55,7 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务�
     pit_isr_flag_clear(PIT_CH1);
     //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_rc_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
     //Current_speed_display();
-    wireless_uart_output_efk();
+    //wireless_uart_output_imu();
     //print_imu();
     //wireless_uart_output_encoder();
     // printf("%.2f," , uart_data[0]);

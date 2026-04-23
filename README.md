@@ -120,14 +120,3 @@ imu位置更新，姿态角映射相应更改
 
 4.17a
 增加了无人机急停时停止小车的功能
-
-4.19a
-增加扩展卡尔曼计算速度和位置
-更改控制周期至2.1ms
-矫正RPM_TO_MPS数值
-统一坐标系至x前y右
-chassis_ekf.X_data[0] : 融合后的全局 X 坐标 (可替代简单的视觉积分)
-chassis_ekf.X_data[1] : 融合后的全局 Y 坐标 
-chassis_ekf.X_data[2] : 融合后的机体航向角
-chassis_ekf.X_data[3] : 融合后真实的机体 X 前向线速度 (V_x_body)
-chassis_ekf.X_data[4] : 融合后真实的机体 Y 右向线速度 (V_y_body)

@@ -63,9 +63,6 @@ void IMU_Car_RC_Update_Loop(void){
     // 4. 获取 Yaw Rate (角速度) - 供给 PID 的 D 项
     // =========================================================
     imu_car_rc_data.yaw_rate = imu660rc_gyro_transition(imu660rc_gyro_z);
-    imu_car_rc_data.ax = imu660rc_acc_transition(imu660rc_acc_y);
-    imu_car_rc_data.ay = -imu660rc_acc_transition(imu660rc_acc_x);
-    imu_car_rc_data.az = imu660rc_acc_transition(imu660rc_acc_z);
 
     // 标记初始化已完成
     imu_car_rc_data.is_calibrated = 1;

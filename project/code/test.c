@@ -37,38 +37,12 @@ void test_program_1(void)
 
 /**
  * @brief 麦克纳姆轮测试程序2
- * 基于编码器里程计精准前进2m (用于标定 RPM_TO_MPS)
+ * 向右0.5m/s持续2s
  */
  void test_program_2(void)
 {
-    float distance = 0.0f;
-    float target_distance = 2.0f; // 目标前进 2 米
-    
-    Mecanum_Unlock();
-    
-    // 初始以 0.3m/s 的速度起步前进
-    Mecanum_Set_Velocity(0.3f, 0.0f, 0.0f);
-    
-    while (distance < target_distance) {
-        // 积分步长: 每 10ms 采样一次速度
-        system_delay_ms(10);
-        
-        // 获取当前底盘前向线速度 (四个轮子线速度的平均值)
-        float current_vx = (encoder_data.lf + encoder_data.rf + encoder_data.lb + encoder_data.rb) / 4.0f;
-        
-        // 积分累加里程: 距离 = 速度 * 时间 (0.01秒)
-        distance += current_vx * 0.01f;
-        
-        // 快到终点时 (剩余 0.2m)，主动减速到 0.1m/s 防止惯性滑出
-        if (target_distance - distance < 0.2f) {
-            Mecanum_Set_Velocity(0.1f, 0.0f, 0.0f);
-        }
-    }
-    
-    // 到达 2m，立即急停锁死
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    system_delay_ms(1000);
-    Mecanum_Stop();
+    Mecanum_Set_Velocity(0.0f, 0.5f, 0.0f);
+    system_delay_ms(2000);
 }
 
 /**

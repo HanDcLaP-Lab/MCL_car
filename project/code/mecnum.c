@@ -174,8 +174,8 @@ void Mecanum_Unlock(void) {
     PID_Reset(&pid_lb);
     PID_Reset(&pid_rb);
     PID_Reset(&pid_yaw_hold);
-    //PID_Reset(&pid_pos_x);
-    //PID_Reset(&pid_pos_y);
+    PID_Reset(&pid_pos_x);
+    PID_Reset(&pid_pos_y);
     PID_Reset(&pid_yaw_rate);
 }
 void Visual_Control_Loop(void) {
@@ -292,6 +292,8 @@ void Visual_Control_Loop(void) {
 
 void Mecanum_Control_Loop(void) {
 
+    // 1. 获取反馈速度
+    Encoder_GetCount();
     static uint8_t has_unlocked = 0;
 
     // 检查 IMU 是否校准完毕并解锁底盘
@@ -389,11 +391,11 @@ void Mecanum_Control_Loop(void) {
     float vy_rear  = smooth_vy * 1.10f; 
 
     // 逆解算公式应用非对称参数
-    target_vel.v_lf = smooth_vx + vy_front + center_v_front;
-    target_vel.v_rf = smooth_vx - vy_front - center_v_front;
+    target_vel.v_lf = smooth_vx - vy_front + center_v_front;
+    target_vel.v_rf = smooth_vx + vy_front - center_v_front;
     
-    target_vel.v_lb = smooth_vx - vy_rear  + center_v_rear;
-    target_vel.v_rb = smooth_vx + vy_rear  - center_v_rear;
+    target_vel.v_lb = smooth_vx + vy_rear  + center_v_rear;
+    target_vel.v_rb = smooth_vx - vy_rear  - center_v_rear;
 
     // ==========================================================
     // 【核心四】底层轮速 PID 计算与防饱和机制
