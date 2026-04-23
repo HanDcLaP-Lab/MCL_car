@@ -351,7 +351,7 @@ void Mecanum_Control_Loop(void) {
             float yaw_error = 0.0f - imu_car_rc_data.yaw_total; 
             
             // 角度死区：1.5度以内放弃纠偏，防止原地鬼畜发热
-            if (fabsf(yaw_error) < 1.5f) {
+            if (fabsf(yaw_error) < 0.01f) {
                 yaw_error = 0.0f;
             }
             // 外环输出 = 期望车体转多快 (rad/s)

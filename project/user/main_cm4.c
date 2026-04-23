@@ -74,9 +74,13 @@ int main(void)
         seekfree_assistant_data_analysis();
         system_delay_ms(1); 
     }
+    
+    // 创造观测条件，校准IMU
+    system_delay_ms(2000); 
+
     Mecanum_Unlock();
 
-    //test_program_2();
+    test_program_4();
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {

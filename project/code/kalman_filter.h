@@ -2,6 +2,10 @@
 #define _KALMAN_FILTER_H
 
 #include "arm_math.h"
+
+#define ODOM_FACTOR_X 1.0f
+#define ODOM_FACTOR_Y 0.95011875f
+
 typedef struct {
     float x;  // 状态变量（估计的速度/脉冲数）
     float p;  // 估计协方差
@@ -42,13 +46,36 @@ typedef struct {
 
     // 打滑判定阈值
     float slip_threshold;
+    
+    // 零速更新与零偏观测状态
+    float stationary_time;   // 连续静止时间累计 (秒)
+    float ax_bias;           // X轴加速度零偏
+    float ay_bias;           // Y轴加速度零偏
+    
+    uint32_t calib_count;    // 初始基准抓取计数
+    float gw_x;              // 世界坐标系 X轴初始常态虚假基准
+    float gw_y;              // 世界坐标系 Y轴初始常态虚假基准
+    float gw_z;              // 世界坐标系 Z轴初始常态虚假基准
+    uint8_t is_calibrated;   // 动态抓取完成标志
+    
+    float ax_kin;            // (监测用) 剔除重力与倾角后的机体系动态X加速度
+    float ay_kin;            // (监测用) 剔除重力与倾角后的机体系动态Y加速度
+    
+    float pitch_base;        // 初始静止时的俯仰角基准
+    float roll_base;         // 初始静止时的横滚角基准
+    float ax_real;           // (监测用) 彻底剔除所有误差后的纯净动态X加速度
+    float ay_real;           // (监测用) 彻底剔除所有误差后的纯净动态Y加速度
+    
+    uint8_t pure_imu_mode;   // (调试用) 纯IMU模式标志，为1时完全信任IMU，忽略编码器
 } Mecanum_EKF_t; 
 
 extern Mecanum_EKF_t chassis_ekf;
 
 void EKF_Init(Mecanum_EKF_t *ekf, float slip_thresh);
-void EKF_Step(Mecanum_EKF_t *ekf, float ax, float ay, float omega, 
-              float v1, float v2, float v3, float v4, float dt);
+void EKF_Step(Mecanum_EKF_t *ekf, float ax, float ay, float az, float omega, 
+              float v1, float v2, float v3, float v4, float dt, 
+              float roll_rad, float pitch_rad, float yaw_rad);
+void EKF_ZUPT(Mecanum_EKF_t *ekf);
 
 
 #endif

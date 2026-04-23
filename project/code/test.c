@@ -2,6 +2,7 @@
 #include "mecnum.h"
 #include "zf_common_headfile.h"
 #include <math.h>
+#include "kalman_filter.h"
 
 /**
  * @brief 麦克纳姆轮测试程序0
@@ -73,22 +74,111 @@ void test_program_1(void)
 
 /**
  * @brief 麦克纳姆轮测试程序3
- * 后退0.5m/s持续2s
+ * 基于 EKF 估计精准横向移动2m (用于标定 ODOM_FACTOR_Y)
  */
 void test_program_3(void)
 {
-    Mecanum_Set_Velocity(-0.5f, 0.0f, 0.0f);
-    system_delay_ms(2000);
+    float distance = 0.0f;
+    float target_distance = 2.0f; // 目标横向移动 2 米
+    
+    Mecanum_Unlock();
+    
+    // 初始以 0.3m/s 的速度横向起步 (vy 传正数，通常代表向左横移)
+    Mecanum_Set_Velocity(0.0f, 0.3f, 0.0f);
+    
+    while (distance < target_distance) {
+        // 积分步长: 每 10ms 采样一次速度
+        system_delay_ms(10);
+        
+        // 获取当前 EKF 估计的车体坐标系横向线速度 (V_y_body)
+        float current_vy = chassis_ekf.X_data[4];
+        
+        // 积分累加里程: 距离 = 速度绝对值 * 时间 (0.01秒)
+        distance += fabsf(current_vy) * 0.01f;
+        
+        // 快到终点时 (剩余 0.2m)，主动减速到 0.1m/s 防止惯性滑出
+        if (target_distance - distance < 0.2f) {
+            Mecanum_Set_Velocity(0.0f, 0.1f, 0.0f);
+        }
+    }
+    
+    // 到达 2m，立即急停锁死
+    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+    system_delay_ms(1000);
+    Mecanum_Stop();
 }
 
 /**
  * @brief 麦克纳姆轮测试程序4
- * 向左0.5m/s持续2s
+ * 基于 EKF 全局坐标，执行多航点闭环直线移动测试 (无限循环直角三角形)
+ * 路径: (0,0) -> (1,0) -> (1,-1) -> (0,0) -> 循环
  */
  void test_program_4(void)
 {
-    Mecanum_Set_Velocity(0.0f, -0.5f, 0.0f);
-    system_delay_ms(2000);
+    // 1. 定义目标航点数组: {X_world, Y_world}
+    float waypoints[3][2] = {
+        {1.0f,  0.0f},  // 第一点: 正前方 1 米
+        {1.0f, -1.0f},  // 第二点: 保持 X，向右方移动 1 米
+        {0.0f,  0.0f}   // 第三点: 返回原点
+    };
+    int num_waypoints = 3;
+
+    Mecanum_Unlock();
+
+    // 无限循环，方便观察累积误差
+    while (1) {
+        // 2. 依次遍历并驶向每一个航点
+        for (int i = 0; i < num_waypoints; i++) {
+            float target_x = waypoints[i][0];
+            float target_y = waypoints[i][1];
+            float dist = 999.0f;
+
+            // 当距离目标点大于 5cm 时，持续控制调整
+            while (dist > 0.05f) {
+                system_delay_ms(10); // 控制周期 10ms (100Hz)
+
+                // ① 获取当前 EKF 的全局坐标与航向角
+                float current_x = chassis_ekf.X_data[0];
+                float current_y = chassis_ekf.X_data[1];
+                float current_theta = chassis_ekf.X_data[2];
+
+                // ② 计算世界坐标系下的位置误差
+                float err_x = target_x - current_x;
+                float err_y = target_y - current_y;
+                dist = sqrtf(err_x * err_x + err_y * err_y);
+
+                // ③ 将世界坐标系误差旋转到车体坐标系 (极为关键！)
+                // 旋转矩阵变换: [err_body] = R(-theta) * [err_world]
+                float cos_theta = cosf(current_theta);
+                float sin_theta = sinf(current_theta);
+                
+                float err_x_body = err_x * cos_theta + err_y * sin_theta;
+                float err_y_body = -err_x * sin_theta + err_y * cos_theta;
+
+                // ④ 纯比例(P)位置环控制器，直接将距离误差映射为车体线速度
+                float kp = 1.2f; // 比例系数: 误差1米时提供1.2m/s的趋势速度
+                float vx = kp * err_x_body;
+                float vy = kp * err_y_body;
+
+                // ⑤ 速度向量圆滑限幅 (最大不超过 0.35 m/s，保证移动平稳防滑)
+                float max_v = 0.35f;
+                float current_v_mag = sqrtf(vx * vx + vy * vy);
+                if (current_v_mag > max_v) {
+                    vx = (vx / current_v_mag) * max_v;
+                    vy = (vy / current_v_mag) * max_v;
+                }
+
+                // ⑥ 下发速度指令 (自转 wz 设为0，由底层的 Yaw 串级 PID 自动锁死车头不偏转)
+                Mecanum_Set_Velocity(vx, vy, 0.0f);
+            }
+
+            // 到达当前航点，精确刹车并停顿 1 秒供观察
+            Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+            system_delay_ms(1000); 
+        }
+    }
+    
+    // Mecanum_Stop(); // 此处无法到达，保留作为代码习惯
 }
 
 /**

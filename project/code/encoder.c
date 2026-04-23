@@ -8,10 +8,10 @@ void Encoder_Init(){
     encoder_quad_init(ENCODER_QUAD_rf, ENCODER_QUAD_rf_PHASE_A, ENCODER_QUAD_rf_PHASE_B);  // 初始化编码器模块与引脚 正交编码器模式
     encoder_quad_init(ENCODER_QUAD_lb, ENCODER_QUAD_lb_PHASE_A, ENCODER_QUAD_lb_PHASE_B);  // 初始化编码器模块与引脚 正交编码器模式
     encoder_quad_init(ENCODER_QUAD_rb, ENCODER_QUAD_rb_PHASE_A, ENCODER_QUAD_rb_PHASE_B);  // 初始化编码器模块与引脚 正交编码器模式
-    Kalman_Init(&K_lf, 0.1f, 1.0f, 0.0f);
-    Kalman_Init(&K_rf, 0.1f, 1.0f, 0.0f);
-    Kalman_Init(&K_lb, 0.1f, 1.0f, 0.0f);
-    Kalman_Init(&K_rb, 0.1f, 1.0f, 0.0f);
+    Kalman_Init(&K_lf, 0.05f, 2.0f, 0.0f); // 调低过程噪声Q并增大测量噪声R，增强对极短周期单脉冲跳动的低通平滑效果
+    Kalman_Init(&K_rf, 0.05f, 2.0f, 0.0f);
+    Kalman_Init(&K_lb, 0.05f, 2.0f, 0.0f);
+    Kalman_Init(&K_rb, 0.05f, 2.0f, 0.0f);
 }
 
 void Encoder_GetCount(){

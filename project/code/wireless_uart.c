@@ -135,6 +135,12 @@ void wireless_uart_output_efk(void){
     wireless_uart_send_float(chassis_ekf.X_data[3]); //x速度
     wireless_uart_send_string(",");
     wireless_uart_send_float(chassis_ekf.X_data[4]); //y速度
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(imu_car_rc_data.ax);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(chassis_ekf.ax_real);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(imu_car_rc_data.az);
     wireless_uart_send_string("\n");
 }
 void print_imu(void){

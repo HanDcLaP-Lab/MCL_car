@@ -47,11 +47,18 @@ void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务�
     Encoder_GetCount();
 
     //EKF
+    // 【核心修复】直接使用 imu_car_rc.c 中算好的无漂移角速度
+    // 将 deg/s 转换为 rad/s
     float gyro_wz = imu_car_rc_data.yaw_rate * (3.1415926f / 180.0f);
+    float pitch_rad = imu_car_rc_data.pitch * (3.1415926535f / 180.0f);
+    float roll_rad  = imu_car_rc_data.roll * (3.1415926535f / 180.0f);
+    float yaw_rad   = imu_car_rc_data.yaw_total * (3.1415926535f / 180.0f);
+
     EKF_Step(&chassis_ekf, 
-             imu_car_rc_data.ax, imu_car_rc_data.ay, gyro_wz, 
+             imu_car_rc_data.ax, imu_car_rc_data.ay, imu_car_rc_data.az, gyro_wz, 
              encoder_data.lf, encoder_data.rf, encoder_data.lb, encoder_data.rb, 
-             CONTROL_DT);
+             CONTROL_DT, 
+             roll_rad, pitch_rad, yaw_rad);
 
     Mecanum_Control_Loop();
       

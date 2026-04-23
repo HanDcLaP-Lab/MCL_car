@@ -57,6 +57,26 @@ void EKF_Init(Mecanum_EKF_t *ekf, float slip_thresh) {
     ekf->R_default_data[0] = 0.05f; // V_x 测量方差
     ekf->R_default_data[3] = 0.05f; // V_y 测量方差
     memcpy(ekf->R_data, ekf->R_default_data, sizeof(ekf->R_data));
+    
+    // 初始化零速状态
+    ekf->stationary_time = 0.0f;
+    ekf->ax_bias = 0.0f;
+    ekf->ay_bias = 0.0f;
+    
+    ekf->calib_count = 0;
+    ekf->gw_x = 0.0f;
+    ekf->gw_y = 0.0f;
+    ekf->gw_z = 0.0f;
+    ekf->is_calibrated = 0;
+    
+    ekf->ax_kin = 0.0f;
+    ekf->ay_kin = 0.0f;
+    
+    ekf->pitch_base = 0.0f;
+    ekf->roll_base = 0.0f;
+    ekf->ax_real = 0.0f;
+    ekf->ay_real = 0.0f;
+    ekf->pure_imu_mode = 1;
 }
 
 /**
@@ -66,8 +86,81 @@ void EKF_Init(Mecanum_EKF_t *ekf, float slip_thresh) {
  * @param v3 左后轮线速度
  * @param v4 右后轮线速度
  */
-void EKF_Step(Mecanum_EKF_t *ekf, float ax, float ay, float omega, 
-              float v1, float v2, float v3, float v4, float dt) {
+void EKF_Step(Mecanum_EKF_t *ekf, float ax, float ay, float az, float omega, 
+              float v1, float v2, float v3, float v4, float dt,
+              float roll_rad, float pitch_rad, float yaw_rad) {
+    // =========================================================
+    // Step 0.5: IMU 3D 加速度重力补偿与水平投影 (航天级 SINS 解耦)
+    // =========================================================
+
+    // 1. 将传感器坐标从 左手系(前右上) 映射为标准航天 右手系FRD(前右下) 并转换 m/s^2 单位
+    float ax_f = ax * 9.80665f;
+    float ay_f = ay * 9.80665f;
+    float az_f = -az * 9.80665f;
+
+    float sin_p = arm_sin_f32(pitch_rad);
+    float cos_p = arm_cos_f32(pitch_rad);
+    float sin_r = arm_sin_f32(roll_rad);
+    float cos_r = arm_cos_f32(roll_rad);
+    float sin_y = arm_sin_f32(yaw_rad);
+    float cos_y = arm_cos_f32(yaw_rad);
+
+    ekf->ax_kin = 0.0f;
+    ekf->ay_kin = 0.0f;
+
+    if (ekf->is_calibrated == 0) {
+        // 3. 校准期: 利用方向余弦矩阵 R(body->world) 提取静态放置下的绝对全局基准(真实重力环境+零偏)
+        float aw_x = (cos_y*cos_p)*ax_f + (cos_y*sin_p*sin_r - sin_y*cos_r)*ay_f + (cos_y*sin_p*cos_r + sin_y*sin_r)*az_f;
+        float aw_y = (sin_y*cos_p)*ax_f + (sin_y*sin_p*sin_r + cos_y*cos_r)*ay_f + (sin_y*sin_p*cos_r - cos_y*sin_r)*az_f;
+        float aw_z = (-sin_p)*ax_f      + (cos_p*sin_r)*ay_f                     + (cos_p*cos_r)*az_f;
+        
+        ekf->gw_x += aw_x;
+        ekf->gw_y += aw_y;
+        ekf->gw_z += aw_z;
+        
+        ekf->pitch_base += pitch_rad;
+        ekf->roll_base += roll_rad;
+        ekf->calib_count++;
+        
+        if (ekf->calib_count >= 800) { // 约 1.68s
+            ekf->gw_x /= ekf->calib_count;
+            ekf->gw_y /= ekf->calib_count;
+            ekf->gw_z /= ekf->calib_count;
+            ekf->pitch_base /= ekf->calib_count;
+            ekf->roll_base /= ekf->calib_count;
+            ekf->is_calibrated = 1;
+        }
+    } else {
+        // 4. 运行期: 利用矩阵 R(world->body) 将那颗固定抓取的"重力球"精准反投到当前扭曲倾斜的车身上
+        float gb_x = (cos_p*cos_y)*ekf->gw_x + (cos_p*sin_y)*ekf->gw_y - (sin_p)*ekf->gw_z;
+        float gb_y = (sin_r*sin_p*cos_y - cos_r*sin_y)*ekf->gw_x + (sin_r*sin_p*sin_y + cos_r*cos_y)*ekf->gw_y + (sin_r*cos_p)*ekf->gw_z;
+        
+        // 5. 从当前原始加速度中剔除此刻的三维分量畸变，得到剔除干净的机体动态加速度
+        ekf->ax_kin = ax_f - gb_x;
+        ekf->ay_kin = ay_f - gb_y;
+    }
+
+    // =========================================================
+    // Step 0: 基于控制周期 dt 的零速检测与零偏观测 (ZUPT & Bias Update)
+    // =========================================================
+    float v_sum = fabsf(v1) + fabsf(v2) + fabsf(v3) + fabsf(v4);
+    
+    // 单脉冲造成的虚假速度约0.039m/s，四轮最大偏差和可达 0.156m/s
+    // 放宽零速判定，防止因单脉冲跳变导致无法触发ZUPT从而使得惯导偏置发散
+    if (v_sum < 0.15f && fabsf(omega) < 0.05f) {
+        ekf->stationary_time += dt;
+        if (ekf->stationary_time > 10.0f) ekf->stationary_time = 10.0f; // 防止溢出
+    } else {
+        ekf->stationary_time = 0.0f; // 一旦运动，立刻打断
+    }
+
+    // 连续静止超过 100ms，触发 ZUPT 并进行动态零偏观测
+    if (ekf->stationary_time > 0.1f) {
+        EKF_ZUPT(ekf);
+        // 此时 ax_kin 和 ay_kin 已经去除了重力，残余量即为传感器水平零偏
+        ekf->ax_bias += 0.05f * (ekf->ax_kin - ekf->ax_bias);
+        ekf->ay_bias += 0.05f * (ekf->ay_kin - ekf->ay_bias);
+    }
     // =========================================================
     // Step 1: 打滑检测与自适应协方差 (Adaptive R)
     // =========================================================
@@ -75,8 +168,20 @@ void EKF_Step(Mecanum_EKF_t *ekf, float ax, float ay, float omega,
     float diff_A = fabsf(v1 - v4); 
     float diff_B = fabsf(v2 - v3); 
     
-    if (fabsf(omega) < 0.05f && (diff_A > ekf->slip_threshold || diff_B > ekf->slip_threshold)) {
-        // 检测到打滑，极速膨胀观测方差 (x100)，降低对轮式里程计的信任
+    // 增加姿态判定：扣除初始停放时的微小倾角基准，得到真正的相对爬坡角，防止因初始地面不平导致的永久性误判
+    float rel_pitch = pitch_rad - ekf->pitch_base;
+    float rel_roll = roll_rad - ekf->roll_base;
+    uint8_t is_climbing = (fabsf(rel_roll) > 0.02f || fabsf(rel_pitch) > 0.02f);
+    
+    // 自适应退化判定：1. 对角轮打滑 2. 姿态剧烈倾斜(爬坡)
+    uint8_t is_slipping = (fabsf(omega) < 0.15f && (diff_A > ekf->slip_threshold || diff_B > ekf->slip_threshold));
+                          
+    if (ekf->pure_imu_mode) {
+        // 纯IMU调试模式：将观测噪声协方差放大一万倍，完全屏蔽编码器数据，只使用IMU积分
+        ekf->R_data[0] = ekf->R_default_data[0] * 10000.0f;
+        ekf->R_data[3] = ekf->R_default_data[3] * 10000.0f;
+    } else if (is_slipping || is_climbing) {
+        // 检测到打滑或压过信标，极大降低对编码器的信任，转而依靠高频无重力 IMU 积分
         ekf->R_data[0] = ekf->R_default_data[0] * 100.0f;
         ekf->R_data[3] = ekf->R_default_data[3] * 100.0f;
     } else {
@@ -97,13 +202,17 @@ void EKF_Step(Mecanum_EKF_t *ekf, float ax, float ay, float omega,
     // 调用 CMSIS 优化的三角函数
     float sin_theta = arm_sin_f32(theta);
     float cos_theta = arm_cos_f32(theta);
+    
+    // 扣除实时观测到的传感器水平零偏，得到绝对真实的物理运动加速度
+    ekf->ax_real = ekf->ax_kin - ekf->ax_bias;
+    ekf->ay_real = ekf->ay_kin - ekf->ay_bias;
 
     // 1. 根据运动学非线性方程预测下一时刻状态 (Euler 积分)
     ekf->X_data[0] = x + (vx * cos_theta - vy * sin_theta) * dt;
     ekf->X_data[1] = y + (vx * sin_theta + vy * cos_theta) * dt;
-    ekf->X_data[2] = theta + omega * dt;
-    ekf->X_data[3] = vx + ax * dt;
-    ekf->X_data[4] = vy + ay * dt;
+    ekf->X_data[2] = yaw_rad;   // 彻底放弃航向角在卡尔曼内的无底洞积分，直接使用外界DMP高精度绝对姿态覆盖
+    ekf->X_data[3] = vx + ekf->ax_real * dt;
+    ekf->X_data[4] = vy + ekf->ay_real * dt;
 
     // 2. 构建雅可比矩阵 F (5x5)
     float F_f32[25] = {0};
@@ -141,8 +250,8 @@ void EKF_Step(Mecanum_EKF_t *ekf, float ax, float ay, float omega,
     // =========================================================
     // 1. 基于编码器解算观测值 Z (麦轮正向运动学公式)
     float Z_data[2];
-    Z_data[0] = (v1 + v2 + v3 + v4) * 0.25f;  
-    Z_data[1] = (v1 - v2 - v3 + v4) * 0.25f; 
+    Z_data[0] = (v1 + v2 + v3 + v4) * 0.25f * ODOM_FACTOR_X;  
+    Z_data[1] = (v1 - v2 - v3 + v4) * 0.25f * ODOM_FACTOR_Y; 
     arm_matrix_instance_f32 Z;
     arm_mat_init_f32(&Z, EKF_OBS_DIM, 1, Z_data);
 
@@ -177,7 +286,7 @@ void EKF_Step(Mecanum_EKF_t *ekf, float ax, float ay, float omega,
     arm_mat_mult_f32(&H, &PHt, &HPHt);
     arm_mat_add_f32(&HPHt, &ekf->R, &S);
 
-    // 5. 【性能榨取】对 2x2 矩阵 S 求逆解析解
+    // 5. 对 2x2 矩阵 S 求逆解析解
     float S_inv_f32[4];
     arm_matrix_instance_f32 S_inv;
     arm_mat_init_f32(&S_inv, EKF_OBS_DIM, EKF_OBS_DIM, S_inv_f32);
@@ -266,4 +375,24 @@ void EKF_Step(Mecanum_EKF_t *ekf, float ax, float ay, float omega,
     #define PI_F 3.1415926535f
     while (ekf->X_data[2] > PI_F)  ekf->X_data[2] -= 2.0f * PI_F;
     while (ekf->X_data[2] < -PI_F) ekf->X_data[2] += 2.0f * PI_F;
+}
+
+/**
+ * @brief 零速更新 (ZUPT)
+ * 当底盘确定处于静止状态时调用，强行消除速度漂移并收敛协方差
+ */
+void EKF_ZUPT(Mecanum_EKF_t *ekf) {
+    // 1. 强制速度状态归零
+    ekf->X_data[3] = 0.0f; // V_x
+    ekf->X_data[4] = 0.0f; // V_y
+    
+    // 2. 极大地压缩速度项的方差（表示我们对此刻速度为0有着极高的确信度）
+    ekf->P_data[3 * EKF_STATE_DIM + 3] = 1e-6f;
+    ekf->P_data[4 * EKF_STATE_DIM + 4] = 1e-6f;
+    
+    // 3. 抹除速度与位置的交叉协方差，防止先前的速度误差在静止时继续污染位置
+    ekf->P_data[0 * EKF_STATE_DIM + 3] = 0.0f; 
+    ekf->P_data[3 * EKF_STATE_DIM + 0] = 0.0f;
+    ekf->P_data[1 * EKF_STATE_DIM + 4] = 0.0f; 
+    ekf->P_data[4 * EKF_STATE_DIM + 1] = 0.0f;
 }
