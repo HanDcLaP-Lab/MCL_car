@@ -11,6 +11,15 @@
 
 // ================= 外部变量声明 =================
 // 供其他文件调用的变量
+// uart_data[8] 索引映射 (无人机→小车下传协议):
+//   [0] car_ground_pos.x    — 小车地面X坐标 (cm)
+//   [1] car_ground_pos.y    — 小车地面Y坐标 (cm)
+//   [2] target_ground_pos.x — 目标地面X坐标 (cm)
+//   [3] target_ground_pos.y — 目标地面Y坐标 (cm)
+//   [4] drone_yaw           — 无人机偏航角 (deg, 顺时针正)
+//   [5] locked_state        — 目标锁定状态 (0=全丢/1=仅小车/2=仅信标/3=都有)
+//   [6] drone_z             — 无人机高度 (cm, 用于急停判断)
+//   [7] reserved            — 预留，当前未使用
 extern float uart_data[8]; 
 extern fifo_struct board_rx_fifo;
 extern uint8_t temp_rx_dat;

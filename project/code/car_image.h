@@ -3,10 +3,13 @@
 
 #include "zf_common_headfile.h"
 
-// UART接收的数据数组
-// 0: Car X, 1: Car Y (无人机坐标系下的地面坐标)
-// 2: Target X, 3: Target Y (无人机坐标系下的地面坐标)
-// 4: Drone Yaw (无人机偏航角)
+// UART接收的数据数组 uart_data[8] — 完整映射见 car_board_comm.h
+// 0: Car X, 1: Car Y (无人机坐标系下的地面坐标, cm)
+// 2: Target X, 3: Target Y (无人机坐标系下的地面坐标, cm)
+// 4: Drone Yaw (无人机偏航角, deg, 顺时针正)
+// 5: locked_state (目标锁定状态: 0=全丢/1=仅小车/2=仅信标/3=都有)
+// 6: drone_z (无人机高度, cm)
+// 7: reserved
 
 
 void Image_Init(void);

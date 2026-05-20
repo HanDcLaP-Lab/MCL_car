@@ -2,6 +2,7 @@
 #include "zf_common_headfile.h"
 
 // ================= 变量定义 =================
+// 索引映射见 car_board_comm.h 中的 extern 声明注释
 float uart_data[8] = {0}; 
 
 uint8_t rx_buffer[512];   

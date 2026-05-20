@@ -83,7 +83,6 @@ int main(void)
         // 此处编写需要循环执行的代码
         // 此处编写需要循环执行的代码
         Parse_Board_Uart_Data();
-        if(uart_data[6] < 0.5f) EN = 0;
         // if(cnt > 20000){
         //     test_program_1();
         // }
@@ -101,6 +100,10 @@ int main(void)
             }
             
             drone_timeout_cnt = 0; // 成功收到无人机数据，喂狗清零
+
+            // [修复] 急停判断移入此处：仅在收到有效数据后执行，避免启动时 uart_data[6] 全零误触发
+            if(uart_data[6] < 0.5f) EN = 0; // [6] drone_z — 无人机高度<0.5cm时急停 (降落/坠地保护)
+
             Visual_Control_Loop();
         } else {
             drone_timeout_cnt++;

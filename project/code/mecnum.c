@@ -2,7 +2,8 @@
 
 #include "zf_common_headfile.h"
 #include <math.h>
-int EN = 1;
+// [新增] volatile: EN 在 ISR (Mecanum_Control_Loop) 和主循环之间共享，必须 volatile 防止编译器缓存
+volatile int EN = 1;
 float f_t = 0;
 // [参数调整] 针对增量式PID (dt=0.001s) 的调优参数
 // KP=3500: 0.5m/s 误差时提供 1750 的基础PWM，确保启动有力
@@ -14,8 +15,8 @@ float KP=3500.0f, KI=20000.0f, KD=0.0f, MAX_I=4500.0f;
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;//速度环pid
 PID_t pid_yaw_hold;//角度环pid
 PID_t pid_yaw_rate;
-// [位置环参数] 1cm误差对应0.015m/s速度
-float POS_KP=0.015f, POS_KI=0.0f, POS_KD=0.0f, POS_MAX_I=0.5f, POS_OUT_MAX=1.0f;
+// [位置环参数] (暂未启用，位置环控制待实现)
+// float POS_KP=0.015f, POS_KI=0.0f, POS_KD=0.0f, POS_MAX_I=0.5f, POS_OUT_MAX=1.0f;
 
 // [参数调整] 
 float YAW_KP=0.16f, YAW_KI=0.0f, YAW_KD=0.01f, YAW_MAX_I=10.0f, YAW_OUT_MAX=1.6f;
@@ -174,8 +175,6 @@ void Mecanum_Unlock(void) {
     PID_Reset(&pid_lb);
     PID_Reset(&pid_rb);
     PID_Reset(&pid_yaw_hold);
-    PID_Reset(&pid_pos_x);
-    PID_Reset(&pid_pos_y);
     PID_Reset(&pid_yaw_rate);
 }
 void Visual_Control_Loop(void) {
@@ -189,7 +188,7 @@ void Visual_Control_Loop(void) {
     if (target_vel.unlock) {
         // 解析无人机下发的位掩码状态
         // 0: 全丢, 1: 仅小车, 2: 仅信标, 3: 都有
-        uint8_t locked_state = (uint8_t)uart_data[5]; 
+        uint8_t locked_state = (uint8_t)uart_data[5]; // [5] locked_state 
 
         // 设定滑行时间: 3 个 VISUAL_DT (假设 VISUAL_DT 为 0.02s，即 60ms)
         //uint32_t coast_max_time = (uint32_t)(3 * VISUAL_DT * 1000); 
@@ -205,13 +204,13 @@ void Visual_Control_Loop(void) {
             dist_out = dist;
 
             float current_speed = TARGET_SPEED;
-             if (dist < 20.0f)   current_speed = 0.35f; // 死区刹车
+              if (dist < 20.0f)   current_speed = 0.35f; // 近距慢速接近 (20cm内减速至0.35m/s)
             // } else if (dist < 35.0f) {
             //     current_speed = TARGET_SPEED * (dist / 35.0f); // 比例减速
             //     if (current_speed < 0.15f) current_speed = 0.15f; 
             // }
 
-            float angle_rad = angle * (float)(3.1415926f / 180.0f);
+            float angle_rad = angle * ((float)M_PI / 180.0f);
             float target_speed_x = current_speed * cosf(angle_rad);
             float target_speed_y = current_speed * sinf(angle_rad);
 
@@ -223,8 +222,8 @@ void Visual_Control_Loop(void) {
             lost_cnt = 0; 
             edge_lost_cnt = 0;
 
-            // 记录丢失前的一瞬间，信标是否在视野边缘 (X边界40cm，Y边界70cm)
-            is_edge = (fabsf(uart_data[3]) > EDGE_Y);
+            // 记录丢失前的一瞬间，信标Y坐标是否在视野边缘 (EDGE_Y=300cm)
+            is_edge = (fabsf(uart_data[3]) > EDGE_Y); // [3] target_ground_pos.y
             if(is_edge){
                 target_edge_cnt++;
             }else{
@@ -343,8 +342,8 @@ void Mecanum_Control_Loop(void) {
     float final_wz = smooth_wz; // 默认采用平滑后的目标自转速度
     
     if (target_vel.unlock) {
-        // 将陀螺仪实际角速度从 deg/s 转换为 rad/s，统一量纲！
-        float current_rate_rad = imu_car_rc_data.yaw_rate * (3.1415926f / 180.0f);
+            // 将陀螺仪实际角速度从 deg/s 转换为 rad/s，统一量纲！
+            float current_rate_rad = imu_car_rc_data.yaw_rate * ((float)M_PI / 180.0f);
 
         // 如果外部没有要求自转 (判断平滑后的 smooth_wz 近似为0)，启动 Yaw 锁死
         if (fabsf(smooth_wz) < 0.05f) {

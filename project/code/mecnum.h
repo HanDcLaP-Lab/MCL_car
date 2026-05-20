@@ -73,7 +73,7 @@ void Motor_Set_Output(pwm_channel_enum pwm_ch, gpio_pin_enum dir_pin, float outp
 void Mecanum_Init(void);
 extern PID_t pid_lf, pid_rf, pid_lb, pid_rb;
 extern PID_t pid_yaw_hold;
-extern PID_t pid_pos_x, pid_pos_y;
+// [已移除] extern PID_t pid_pos_x, pid_pos_y; — 位置环未实现，pid_pos_x/y 未定义，引用会导致链接错误
 extern float KP,KI,KD,MAX_I;
 extern float YAW_KP, YAW_KI, YAW_KD, YAW_MAX_I, YAW_OUT_MAX;
 extern Target_t target_vel;
