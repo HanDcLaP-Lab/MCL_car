@@ -100,9 +100,13 @@ int main(void)
             }
             
             drone_timeout_cnt = 0; // 成功收到无人机数据，喂狗清零
+            static last_en = 1;
+            
 
             // [修复] 急停判断移入此处：仅在收到有效数据后执行，避免启动时 uart_data[6] 全零误触发
             if(uart_data[6] < 0.5f) EN = 0; // [6] drone_z — 无人机高度<0.5cm时急停 (降落/坠地保护)
+            if(uart_data[6] > 0.5f && last_en < 0.5f) EN = 1;
+            last_en = uart_data[6];
 
             Visual_Control_Loop();
         } else {
