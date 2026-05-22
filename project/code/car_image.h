@@ -8,7 +8,7 @@
 // 2: Target X, 3: Target Y (无人机坐标系下的地面坐标, cm)
 // 4: Drone Yaw (无人机偏航角, deg, 顺时针正)
 // 5: locked_state (目标锁定状态: 0=全丢/1=仅小车/2=仅信标/3=都有)
-// 6: drone_z (无人机高度, cm)
+// 6: car_en (急停使能标志, 0=停 1=行)
 // 7: reserved
 
 

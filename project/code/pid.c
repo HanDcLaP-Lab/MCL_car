@@ -85,12 +85,12 @@ float PID_Calculate_Incremental(PID_t *pid, float error, float dt) {
     // 累加到输出 (Output 充当了积分器的角色)
     pid->output += delta_output;
 
-    // 输出限幅
-    // if (pid->output > pid->out_max) {
-    //     pid->output = pid->out_max;
-    // } else if (pid->output < -pid->out_max) {
-    //     pid->output = -pid->out_max;
-    // }
+    // 输出限幅 — 防止PID内部状态无限累积导致刹车延迟
+    if (pid->output > pid->out_max) {
+        pid->output = pid->out_max;
+    } else if (pid->output < -pid->out_max) {
+        pid->output = -pid->out_max;
+    }
 
     // 更新历史误差
     pid->prev_prev_error = pid->prev_error;

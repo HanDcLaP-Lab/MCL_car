@@ -46,7 +46,7 @@
 
 ```
 1. Parse_Board_Uart_Data()              // 解析无人机数据包
-2. 无人机急停判断 (uart_data[6] < 0.5f)  // Z轴高度过低 → 停车
+2. 无人机急停判断 (uart_data[6] < 0.5f)  // car_en急停标志 → 停车
 3. 无人机通讯看门狗:
    - 收到数据 → 喂狗清零，跑 Visual_Control_Loop()
    - 超时1000ms → EN=0, Mecanum_Stop(), 卡住计数器
