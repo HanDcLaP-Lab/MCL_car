@@ -45,7 +45,7 @@
 
 // **************************** 代码区域 ****************************
 extern volatile uint8_t board_rx_complete_flag;
-//extern int32_t cnt;
+extern int32_t cnt;
 //int mv_en = 0;
 void Wireless_Update(uint8_t ch, float val);
 int main(void)
@@ -83,7 +83,7 @@ int main(void)
         // 此处编写需要循环执行的代码
         // 此处编写需要循环执行的代码
         Parse_Board_Uart_Data();
-        // if(cnt > 20000){
+        // if(cnt > 15000){
         //     test_program_1();
         // }
         
@@ -104,7 +104,7 @@ int main(void)
             
 
             // [修复] 急停判断移入此处：仅在收到有效数据后执行，避免启动时 uart_data[6] 全零误触发
-            if(uart_data[6] < 0.5f) EN = 0; // [6] car_en — 急停使能标志 (0=急停, 1=正常)
+            //if(uart_data[6] < 0.5f) EN = 0; // [6] car_en — 急停使能标志 (0=急停, 1=正常)
             if(uart_data[6] > 0.5f && last_en < 0.5f) EN = 1;
             last_en = uart_data[6];
 
@@ -115,7 +115,7 @@ int main(void)
             if (drone_timeout_cnt > 1000) { // 超过 300ms 没收到通讯
                 
                 // 【核心修改：直接底层停车】不需要再调用视觉环了
-                EN = 0;               // 1. 切断 PID 最终输出
+                //EN = 0;               // 1. 切断 PID 最终输出
                 Mecanum_Stop();       // 2. 清空目标速度、清空 PID 积分、锁定底盘 PWM
                 
                 drone_timeout_cnt = 1000; // 卡住计数器防止溢出

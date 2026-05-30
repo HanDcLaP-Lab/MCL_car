@@ -47,7 +47,7 @@ void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务�
 
     Mecanum_Control_Loop();
       
-    
+    cnt++;
 }
 
 void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务函数      
@@ -57,7 +57,7 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务�
     //Current_speed_display();
     //wireless_uart_output_imu();
     //print_imu();
-    //wireless_uart_output_encoder();
+    wireless_uart_output_target();
     // printf("%.2f," , uart_data[0]);
     // printf("%.2f," , uart_data[1]);
     // printf("%.2f," , uart_data[2]);

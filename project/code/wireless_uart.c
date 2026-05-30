@@ -82,7 +82,7 @@ void wireless_uart_output_target(void){
     wireless_uart_send_string(",");
     wireless_uart_send_float(ang_out);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(f_t);
+    wireless_uart_send_int((int32_t)EN);
     wireless_uart_send_string(",");
     wireless_uart_send_float(imu_car_rc_data.yaw_total);
     wireless_uart_send_string(",");

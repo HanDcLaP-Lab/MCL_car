@@ -10,7 +10,7 @@
 #define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.028f   // 轮子半径
 #define PWM_MAX_M       7000.0f  // PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
-#define TARGET_SPEED    0.25f     // 目标速度 (m/s)
+#define TARGET_SPEED    0.6f     // 目标速度 (m/s)
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f   
@@ -45,7 +45,12 @@
 //#define EDGE_X         50.0f    // 前后方向边缘视野界限 (cm)
 #define EDGE_Y         300.0f    // 左右方向边缘视野界限 (cm)
 
-extern int EN;
+// 信标合并滑行参数
+#define MERGE_DIST_THRESHOLD    28.0f   // 触发合并滑行的车-信标距离上限 (cm)
+#define MERGE_JUMP_THRESHOLD    40.0f   // target 坐标跳变检测阈值 (cm)
+#define MERGE_COAST_FRAMES      25      // 合并滑行持续帧数 (50Hz 下 25 帧 = 0.5s)
+
+extern volatile int EN;
 extern float f_t;
 // ================== 结构体定义 ==================
 typedef struct {

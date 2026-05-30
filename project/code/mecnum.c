@@ -185,6 +185,10 @@ void Visual_Control_Loop(void) {
     static uint16_t edge_lost_cnt = 0;
 
     static uint16_t target_edge_cnt = 0;
+    static float prev_target_x = 0.0f, prev_target_y = 0.0f;
+    static uint8_t has_prev_target = 0;
+    static uint8_t merge_coast = 0;
+    static float prev_car_dist = 0.0f;
     if (target_vel.unlock) {
         // 解析无人机下发的位掩码状态
         // 0: 全丢, 1: 仅小车, 2: 仅信标, 3: 都有
@@ -200,26 +204,46 @@ void Visual_Control_Loop(void) {
             float dist = 0.0f, angle = 0.0f;
             Image_Solve(imu_car_rc_data.yaw, &dist, &angle);
 
-            ang_out = angle;
-            dist_out = dist;
+            // 跳变检测：距离近 + target 坐标突变 → 用旧方向滑行
+            float car_target_dist = uart_data[7];
+            if (has_prev_target && prev_car_dist < MERGE_DIST_THRESHOLD) {
+                float dx = uart_data[2] - prev_target_x;
+                float dy = uart_data[3] - prev_target_y;
+                if (sqrtf(dx * dx + dy * dy) > MERGE_JUMP_THRESHOLD) {
+                    merge_coast = MERGE_COAST_FRAMES;
+                }
+            }
+            prev_target_x = uart_data[2];
+            prev_target_y = uart_data[3];
+            prev_car_dist = car_target_dist;
+            has_prev_target = 1;
 
-            float current_speed = TARGET_SPEED;
-              if (dist < 20.0f)   current_speed = 0.35f; // 近距慢速接近 (20cm内减速至0.35m/s)
-            // } else if (dist < 35.0f) {
-            //     current_speed = TARGET_SPEED * (dist / 35.0f); // 比例减速
-            //     if (current_speed < 0.15f) current_speed = 0.15f; 
-            // }
+            if (merge_coast > 0) {
+                merge_coast--;
+                Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+            } else {
+                ang_out = angle;
+                dist_out = dist;
 
-            float angle_rad = angle * ((float)M_PI / 180.0f);
-            float target_speed_x = current_speed * cosf(angle_rad);
-            float target_speed_y = current_speed * sinf(angle_rad);
+                float current_speed = TARGET_SPEED;
+                  if (dist < 20.0f)   current_speed = 0.35f; // 近距慢速接近 (20cm内减速至0.35m/s)
+                // } else if (dist < 35.0f) {
+                //     current_speed = TARGET_SPEED * (dist / 35.0f); // 比例减速
+                //     if (current_speed < 0.15f) current_speed = 0.15f;
+                // }
 
-            Mecanum_Set_Velocity(target_speed_x, target_speed_y, 0.0f);
+                float angle_rad = angle * ((float)M_PI / 180.0f);
+                float target_speed_x = current_speed * cosf(angle_rad);
+                float target_speed_y = current_speed * sinf(angle_rad);
 
-            // 记录最后有效速度与状态
-            last_vx = target_speed_x;
-            last_vy = target_speed_y;
-            lost_cnt = 0; 
+                Mecanum_Set_Velocity(target_speed_x, target_speed_y, 0.0f);
+
+                // 记录最后有效速度与状态
+                last_vx = target_speed_x;
+                last_vy = target_speed_y;
+            }
+
+            lost_cnt = 0;
             edge_lost_cnt = 0;
 
             // 记录丢失前的一瞬间，信标Y坐标是否在视野边缘 (EDGE_Y=300cm)
