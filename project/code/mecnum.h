@@ -37,18 +37,8 @@
 #define MOTOR_LB_DIR    P18_4               // 左后 DIR
 #define MOTOR_RB_DIR    P06_3               // 右后 DIR
 
-//记忆功能
-// 记忆与视觉边界功能
-#define COAST_CNT      20        // 目标丢失后的记忆滑行帧数 (每帧约20ms，3帧即60ms)
-#define EDGE_CNT  30
-#define COAST_DECAY    1.0f   // 速度衰减系数 (每次循环衰减)
-//#define EDGE_X         50.0f    // 前后方向边缘视野界限 (cm)
-#define EDGE_Y         300.0f    // 左右方向边缘视野界限 (cm)
-
-// 信标合并滑行参数
-#define MERGE_DIST_THRESHOLD    28.0f   // 触发合并滑行的车-信标距离上限 (cm)
-#define MERGE_JUMP_THRESHOLD    40.0f   // target 坐标跳变检测阈值 (cm)
-#define MERGE_COAST_FRAMES      25      // 合并滑行持续帧数 (50Hz 下 25 帧 = 0.5s)
+// 追踪/滑行/合并相关常量已移至 car_ctrl.h
+// 底盘物理参数和电机控制常量保留于此
 
 extern volatile int EN;
 extern float f_t;

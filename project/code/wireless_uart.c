@@ -72,13 +72,13 @@ void wireless_uart_output_pid(void){
 }
 
 void wireless_uart_output_target(void){
-    wireless_uart_send_float(uart_data[0]);
+    wireless_uart_send_float(car.car_x);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(uart_data[1]);
+    wireless_uart_send_float(car.car_y);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(uart_data[2]);
+    wireless_uart_send_float(car.target_x);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(uart_data[3]);
+    wireless_uart_send_float(car.target_y);
     wireless_uart_send_string(",");
     wireless_uart_send_float(ang_out);
     wireless_uart_send_string(",");

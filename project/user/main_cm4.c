@@ -34,6 +34,7 @@
 ********************************************************************************************************************/
 
 #include "zf_common_headfile.h"
+#include "car_ctrl.h"
 
 // 打开新的工程或者工程移动了位置务必执行以下操作
 // 第一步 关闭上面所有打开的文件
@@ -60,6 +61,7 @@ int main(void)
     IMU_Car_RC_Init();
     Encoder_Init();
     Mecanum_Init();
+    CarCtrl_Init();
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     
@@ -75,7 +77,7 @@ int main(void)
     }
     Mecanum_Unlock();
 
-    //test_program_1();
+    test_program_1();
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
@@ -101,14 +103,13 @@ int main(void)
             
             drone_timeout_cnt = 0; // 成功收到无人机数据，喂狗清零
             static float last_en = 1.0f;
-            
 
-            // [修复] 急停判断移入此处：仅在收到有效数据后执行，避免启动时 uart_data[6] 全零误触发
-            //if(uart_data[6] < 0.5f) EN = 0; // [6] car_en — 急停使能标志 (0=急停, 1=正常)
-            if(uart_data[6] > 0.5f && last_en < 0.5f) EN = 1;
-            last_en = uart_data[6];
+            car_stat_update();
 
-            Visual_Control_Loop();
+            if(car.car_en > 0.5f && last_en < 0.5f) EN = 1;
+            last_en = car.car_en;
+
+            CarCtrl_Update();
         } else {
             drone_timeout_cnt++;
             // 主循环中有 system_delay_ms(1)，因此每次自增大约是 1ms 
