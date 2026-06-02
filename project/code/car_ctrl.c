@@ -119,6 +119,7 @@ void CarCtrl_Update(void) {
             g_state = TRACK_ACTIVE;
             g_edge_cnt = 0;
             g_is_edge = 0;
+            g_has_prev = 0;
         }
 
         if (target_present) {
@@ -142,6 +143,9 @@ void CarCtrl_Update(void) {
 
         if (!target_present) {
             g_cd_end_ms = cnt + g_predicted_arrival_ms;
+            if (g_is_edge && g_edge_cnt < 5) {
+                g_cd_end_ms = cnt + COUNTDOWN_MIN_MS;
+            }
             g_cd_vx_cm = g_last_vx * ENCODER_MPS_TO_CMPS;
             g_cd_vy_cm = g_last_vy * ENCODER_MPS_TO_CMPS;
             g_state = TRACK_COUNTDOWN;
@@ -188,8 +192,8 @@ void CarCtrl_Update(void) {
     {
 #if ENABLE_SMOOTH_SWITCH
         if (target_present) {
-            float dx = car.target_x_f - g_prev_tx_raw;
-            float dy = car.target_y_f - g_prev_ty_raw;
+            float dx = car.target_x - g_prev_tx_raw;
+            float dy = car.target_y - g_prev_ty_raw;
             if (sqrtf(dx * dx + dy * dy) < SWITCH_PROXIMITY_THRESHOLD) {
                 g_state = TRACK_ACTIVE;
                 g_edge_cnt = 0;
