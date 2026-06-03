@@ -182,20 +182,35 @@ void Visual_Control_Loop(void) {
     static float last_vx = 0.0f;
     static float last_vy = 0.0f;
     static uint16_t is_edge = 0;
-    static uint16_t edge_lost_cnt = 0;
+    static uint16_t valid_track_cnt = 0; // [新增] 连续有效跟踪帧数
+    static int dash_frames = 0;          // [新增] 融合盲冲倒数帧数
 
-    static uint16_t target_edge_cnt = 0;
     static float prev_target_x = 0.0f, prev_target_y = 0.0f;
     static uint8_t has_prev_target = 0;
     static uint8_t merge_coast = 0;
     static float prev_car_dist = 0.0f;
-    if (target_vel.unlock) {
-        // 解析无人机下发的位掩码状态
-        // 0: 全丢, 1: 仅小车, 2: 仅信标, 3: 都有
-        uint8_t locked_state = (uint8_t)uart_data[5]; // [5] locked_state 
 
-        // 设定滑行时间: 3 个 VISUAL_DT (假设 VISUAL_DT 为 0.02s，即 60ms)
-        //uint32_t coast_max_time = (uint32_t)(3 * VISUAL_DT * 1000); 
+    if (target_vel.unlock) {
+        // [隐患修复3]: 绝对接管系统。一旦盲冲启动（dash_frames > 0），无视后续一切视觉状态，强制执行到底。
+        // 这防止了无人机中途断连或者状态闪烁导致盲冲意外中止的问题。
+        if (dash_frames > 0) {
+            dash_frames--;
+            Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+            if (dash_frames == 0) {
+                Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 冲刺结束，停车
+                
+                // [隐患修复5]: 彻底清空遗留速度状态！
+                // 否则，下一帧不再被此 return 拦截时，会带着旧的 last_vx 误入状态 1/2 的传统衰减滑行，导致严重冲过头
+                last_vx = 0.0f;
+                last_vy = 0.0f;
+                lost_cnt = COAST_CNT + 1; // 让普通的滑行计时器直接过期
+                valid_track_cnt = 0;
+            }
+            return; // 提前退出，屏蔽后续视觉解析！
+        }
+
+        // 0: 全丢, 1: 仅小车, 2: 仅信标, 3: 都有, 4: 发生近距离融合（盲冲）
+        uint8_t locked_state = (uint8_t)uart_data[5]; 
 
         // ==========================================
         // 状态 3：双目标锁定 (正常追踪)
@@ -226,11 +241,7 @@ void Visual_Control_Loop(void) {
                 dist_out = dist;
 
                 float current_speed = TARGET_SPEED;
-                  if (dist < 20.0f)   current_speed = 0.35f; // 近距慢速接近 (20cm内减速至0.35m/s)
-                // } else if (dist < 35.0f) {
-                //     current_speed = TARGET_SPEED * (dist / 35.0f); // 比例减速
-                //     if (current_speed < 0.15f) current_speed = 0.15f;
-                // }
+                // if (dist < 20.0f) current_speed = 0.35f; 
 
                 float angle_rad = angle * ((float)M_PI / 180.0f);
                 float target_speed_x = current_speed * cosf(angle_rad);
@@ -238,77 +249,89 @@ void Visual_Control_Loop(void) {
 
                 Mecanum_Set_Velocity(target_speed_x, target_speed_y, 0.0f);
 
-                // 记录最后有效速度与状态
                 last_vx = target_speed_x;
                 last_vy = target_speed_y;
             }
 
             lost_cnt = 0;
-            edge_lost_cnt = 0;
-
-            // 记录丢失前的一瞬间，信标Y坐标是否在视野边缘 (EDGE_Y=300cm)
-            is_edge = (fabsf(uart_data[3]) > EDGE_Y); // [3] target_ground_pos.y
-            if(is_edge){
-                target_edge_cnt++;
-            }else{
-                target_edge_cnt = 0;
-            }
+            dash_frames = 0;
+            if (valid_track_cnt < 1000) valid_track_cnt++; // 累积有效帧
+            
+            // 判断小车与信标之间的相对距离是否超过 200cm
+            is_edge = (uart_data[7] > 200.0f);
         } 
         // ==========================================
-        // 状态 2：仅信标 (小车丢失)
+        // [新增] 状态 4：发生融合，进入盲冲/滑行判断
         // ==========================================
-        else if (locked_state == 2) {
-            // 此时无人机算不出小车的相对坐标，只能依靠小车自身的记忆滑行
-            
-            
-            if (lost_cnt <= COAST_CNT) {
-                lost_cnt++;
-                last_vx *= COAST_DECAY; 
-                last_vy *= COAST_DECAY;
-                Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); // 【修改点】
+        else if (locked_state == 4) {
+            if (!is_edge) {
+                // 在中心丢失，极大可能是近距离融合，执行精准盲冲
+                if (dash_frames == 0 && valid_track_cnt > 0) {
+                    float speed_sq = last_vx * last_vx + last_vy * last_vy;
+                    float speed = sqrtf(speed_sq);
+                    if (speed < 0.1f) speed = 0.1f; // 防除零
+                    
+                    // 物理换算 (约20ms一帧): 时间 = 距离(cm)/100 / 速度
+                    dash_frames = (int)((prev_car_dist / 100.0f) / speed / 0.02f);
+                    dash_frames += 10; // 追加 200ms (10帧) 的余量以确保完全覆盖信标
+                    
+                    // [隐患修复4]: 限制盲冲最高帧数 (如 100帧=2秒)，防止距离极大或速度极小时算出天文数字直接失控
+                    if (dash_frames > 100) dash_frames = 100;
+                    
+                    // 第一帧立马执行
+                    dash_frames--;
+                    Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+                }
             } else {
-                Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
+                // 在边缘误判融合，按边缘防闪烁逻辑处理
+                if (valid_track_cnt > 10 && lost_cnt < 5) {
+                    lost_cnt++;
+                    last_vx *= COAST_DECAY; 
+                    last_vy *= COAST_DECAY;
+                    Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+                } else {
+                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+                    valid_track_cnt = 0;
+                    lost_cnt = COAST_CNT + 1; // 强制过期，防止停滞
+                }
             }
-            target_edge_cnt = 0;
         }
         // ==========================================
-        // 状态 1：仅小车 (信标丢失)
+        // 状态 2 或 1：一方丢失 (应用边缘防闪烁过滤)
         // ==========================================
-        else if (locked_state == 1) {
-            // 如果信标在边缘丢失，立刻刹车，配合无人机原地扫圈搜索
+        else if (locked_state == 2 || locked_state == 1) {
             if (is_edge) {
-                edge_lost_cnt ++;
-                if(target_edge_cnt < 5){
-                    edge_lost_cnt = EDGE_CNT + 1;
+                // 边缘丢失防闪烁: 只有稳定跟踪后才允许滑行5帧，否则立刻刹车
+                if (valid_track_cnt > 10 && lost_cnt < 5) {
+                    lost_cnt++;
+                    last_vx *= COAST_DECAY; 
+                    last_vy *= COAST_DECAY;
+                    Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+                } else {
+                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+                    if (lost_cnt >= 5) valid_track_cnt = 0;
                 }
-                if(edge_lost_cnt < EDGE_CNT){
-                Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
-                }else{
-                Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
-                }
-                lost_cnt = COAST_CNT + 1; // 强制超时，防止后续误触发
-            } 
-            // 如果信标在中心丢失，说明被车底遮挡，滑行 3 帧开出盲区
-            else {
-                
+            } else {
+                // 中心常规丢失，执行原有的衰减逻辑
                 if (lost_cnt <= COAST_CNT) {
                     lost_cnt++;
                     last_vx *= COAST_DECAY; 
                     last_vy *= COAST_DECAY;
-                    Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); // 【修改点】
+                    Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); 
                 } else {
-                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
+                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); 
+                    valid_track_cnt = 0;
                 }
             }
         }
         // ==========================================
-        // 状态 0：全丢 (极度危险)
+        // 状态 0：全丢
         // ==========================================
         else {
-            // 没有任何参考物，直接强制急停
-            Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 【修改点】
+            Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); 
             lost_cnt = COAST_CNT + 1; 
-            target_edge_cnt = 0;
+            valid_track_cnt = 0;
+            dash_frames = 0;
         }
     }
 }
