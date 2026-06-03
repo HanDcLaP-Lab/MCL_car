@@ -1,5 +1,5 @@
 #include "zf_common_headfile.h"
-
+#include "car_ctrl.h"
 uint8 data_buffer[32];
 uint8 data_len;
 
@@ -122,6 +122,13 @@ void wireless_uart_output_encoder(void){
     // wireless_uart_send_float(ang_out);
     // wireless_uart_send_string(",");
     // wireless_uart_send_float(imu_car_rc_data.yaw);
+    wireless_uart_send_string("\n");
+}
+
+void wireless_uart_output_status(void){
+    wireless_uart_send_int(ctx.state);
+    //wireless_uart_send_string(",");
+    //wireless_uart_send_float(target_vel.v_lf);
     wireless_uart_send_string("\n");
 }
 
