@@ -52,16 +52,11 @@ void CarCtrl_Update(void) {
     uint8_t locked_state = (uint8_t)(car.locked_state + 0.5f);
     // 无人机协议中 bit1(值为2)表示信标存在，bit0(值为1)表示小车存在
     uint8_t target_present = ((locked_state & 0x02) != 0); 
-    // 【核心修复】信标是否存在
-    uint8_t beacon_present = ((locked_state & 0x02) != 0); 
-    // 【核心修复】必须双目标同时存在，小车才能安全地算出追逐向量！否则 x_car=0, y_car=0，小车会往错误的方向狂奔出视野
-    uint8_t target_present = (locked_state == 3);
 
     switch (ctx.state) {
 
     case TRACK_IDLE:
         if (target_present) {
-        if (beacon_present) {
             // 所有新目标必须通过暂态验证 (绝不允许直接跟踪)
             memset(ctx.val_win, 0, sizeof(ctx.val_win));
             ctx.val_idx = 0;
@@ -89,7 +84,6 @@ void CarCtrl_Update(void) {
 
         // --- 连续丢帧超时 → 放弃验证, 回 IDLE ---
         if (!target_present) {
-        if (!beacon_present) {
             ctx.val_lost++;
 #if VALIDATE_LOST_TIMEOUT_FRAMES > 0
             if (ctx.val_lost > VALIDATE_LOST_TIMEOUT_FRAMES) {
@@ -113,13 +107,14 @@ void CarCtrl_Update(void) {
             float yaw_rad = car.drone_yaw * ((float)M_PI / 180.0f);
             float cos_yaw = cosf(yaw_rad);
             float sin_yaw = sinf(yaw_rad);
-            tx_earth = car.target_x * cos_yaw - car.target_y * sin_yaw;
-            ty_earth = car.target_x * sin_yaw + car.target_y * cos_yaw;
+            tx_earth = (car.target_x - car.car_x) * cos_yaw - (car.target_y - car.car_y) * sin_yaw;
+            ty_earth = (car.target_x - car.car_x) * sin_yaw + (car.target_y - car.car_y) * cos_yaw;
 
             if (ctx.val_has_prev_pos) {
                 float dx = tx_earth - ctx.val_last_tx;
                 float dy = ty_earth - ctx.val_last_ty;
                 float jump = sqrtf(dx * dx + dy * dy);
+                ctx.last_jump = jump; // 保存到上下文供串口打印
                 position_ok = (jump <= VALIDATE_MAX_JUMP_CM);
             }
             // 首次有效帧: 无条件通过, 记录坐标作为后续比较基准
@@ -144,9 +139,6 @@ void CarCtrl_Update(void) {
             ctx.val_win[ctx.val_idx] = target_present ? 1 : 0;
             if (target_present && !old) ctx.val_hits++;
             if (!target_present && old) ctx.val_hits--;
-            ctx.val_win[ctx.val_idx] = beacon_present ? 1 : 0;
-            if (beacon_present && !old) ctx.val_hits++;
-            if (!beacon_present && old) ctx.val_hits--;
             ctx.val_idx = (ctx.val_idx + 1) % VALIDATE_WINDOW_FRAMES;
         }
 
@@ -170,10 +162,6 @@ void CarCtrl_Update(void) {
         } else {
             Mecanum_Set_Velocity(ctx.last_vx, ctx.last_vy, 0.0f);
         }
-        // --- 【致命修复】运动控制：验证阶段绝不允许盲目弹射起步 ---
-        // 验证期间，小车必须原地待命，等待确认这是一个稳态存在的真实信标
-        // 否则如果出现假目标或者没认出小车，小车弹射 0.6m/s 会直接冲出无人机视野导致永远验证失败
-        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
         break;
     }
 
@@ -204,13 +192,15 @@ void CarCtrl_Update(void) {
         float yaw_rad = car.drone_yaw * ((float)M_PI / 180.0f);
         float cos_yaw = cosf(yaw_rad);
         float sin_yaw = sinf(yaw_rad);
-        float tx_earth = car.target_x * cos_yaw - car.target_y * sin_yaw;
-        float ty_earth = car.target_x * sin_yaw + car.target_y * cos_yaw;
+        float tx_earth = (car.target_x - car.car_x) * cos_yaw - (car.target_y - car.car_y) * sin_yaw;
+        float ty_earth = (car.target_x - car.car_x) * sin_yaw + (car.target_y - car.car_y) * cos_yaw;
 
         if (ctx.has_prev && ctx.prev_car_dist < MERGE_JUMP_MAX_DIST_CM) {
             float dx = tx_earth - ctx.prev_tx_raw;
             float dy = ty_earth - ctx.prev_ty_raw;
-            if (sqrtf(dx * dx + dy * dy) > MERGE_JUMP_CM) {
+            float jump = sqrtf(dx * dx + dy * dy);
+            ctx.last_jump = jump; // 保存 ACTIVE 状态下的跳变距离供串口打印
+            if (jump > MERGE_JUMP_CM) {
                 // 用跳变前(上一帧)的旧信标距离算倒计时, 不是新信标
                 ctx.cd_end_ms = cnt + ComputeArrivalMs(ctx.prev_car_dist) + 500;
                 ctx.cd_vx_cm = ctx.last_vx * ENCODER_MPS_TO_CMPS;

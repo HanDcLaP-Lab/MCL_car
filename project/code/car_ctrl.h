@@ -72,6 +72,8 @@ typedef struct {
     // 暂态验证：连续丢帧计数器 (进入 VALIDATING 时重置)
     uint16_t val_lost;
 
+    float last_jump; // 调试用：最后一次两帧坐标之间的跳变距离 (cm)
+
     // 倒计时
     int32_t cd_end_ms;
     float   cd_vx_cm, cd_vy_cm;

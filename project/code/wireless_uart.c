@@ -127,8 +127,14 @@ void wireless_uart_output_encoder(void){
 
 void wireless_uart_output_status(void){
     wireless_uart_send_int(ctx.state);
-    //wireless_uart_send_string(",");
-    //wireless_uart_send_float(target_vel.v_lf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_int(ctx.val_hits);                // 命中次数 (目标是35)
+    wireless_uart_send_string(",");
+    wireless_uart_send_int((int32_t)car.locked_state);   // 无人机锁定状态 (3表示双锁)
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(ctx.last_jump);             // 帧间跳变距离 (阈值是50)
+    wireless_uart_send_string(",");
+    wireless_uart_send_int(ctx.val_has_prev_pos);        // 坐标基准是否已被清空
     wireless_uart_send_string("\n");
 }
 
