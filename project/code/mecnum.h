@@ -47,7 +47,7 @@
 
 // 信标合并滑行参数
 #define MERGE_DIST_THRESHOLD    28.0f   // 触发合并滑行的车-信标距离上限 (cm)
-#define MERGE_JUMP_THRESHOLD    40.0f   // target 坐标跳变检测阈值 (cm)
+#define MERGE_JUMP_THRESHOLD    50.0f   // target 坐标跳变检测阈值 (cm)
 #define MERGE_COAST_FRAMES      25      // 合并滑行持续帧数 (50Hz 下 25 帧 = 0.5s)
 
 extern volatile int EN;

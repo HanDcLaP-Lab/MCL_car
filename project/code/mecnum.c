@@ -275,12 +275,17 @@ void Visual_Control_Loop(void) {
                     dash_frames = (int)((prev_car_dist / 100.0f) / speed / 0.02f);
                     dash_frames += 10; // 追加 200ms (10帧) 的余量以确保完全覆盖信标
                     
-                    // [隐患修复4]: 限制盲冲最高帧数 (如 100帧=2秒)，防止距离极大或速度极小时算出天文数字直接失控
-                    if (dash_frames > 100) dash_frames = 100;
+                    // [隐患修复4]: 限制盲冲最高帧数 50帧=1秒，防止距离极大或速度极小时算出天文数字直接失控
+                    if (dash_frames > 40) dash_frames = 40;
                     
                     // 第一帧立马执行
                     dash_frames--;
                     Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+                } else if (dash_frames == 0) {
+                    // [指令真空填补]: 突兀的跳变或者不合法的融合（如未经历状态3）
+                    // 绝不信任该孤立噪点，立刻停车保平安，并清空可能越界的累积
+                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+                    valid_track_cnt = 0;
                 }
             } else {
                 // 在边缘误判融合，按边缘防闪烁逻辑处理
