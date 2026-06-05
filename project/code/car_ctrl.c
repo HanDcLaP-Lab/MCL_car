@@ -107,8 +107,8 @@ void CarCtrl_Update(void) {
             float yaw_rad = car.drone_yaw * ((float)M_PI / 180.0f);
             float cos_yaw = cosf(yaw_rad);
             float sin_yaw = sinf(yaw_rad);
-            tx_earth = (car.target_x - car.car_x) * cos_yaw - (car.target_y - car.car_y) * sin_yaw;
-            ty_earth = (car.target_x - car.car_x) * sin_yaw + (car.target_y - car.car_y) * cos_yaw;
+            tx_earth = car.target_x * cos_yaw - car.target_y * sin_yaw;
+            ty_earth = car.target_x * sin_yaw + car.target_y * cos_yaw;
 
             if (ctx.val_has_prev_pos) {
                 float dx = tx_earth - ctx.val_last_tx;
@@ -192,8 +192,8 @@ void CarCtrl_Update(void) {
         float yaw_rad = car.drone_yaw * ((float)M_PI / 180.0f);
         float cos_yaw = cosf(yaw_rad);
         float sin_yaw = sinf(yaw_rad);
-        float tx_earth = (car.target_x - car.car_x) * cos_yaw - (car.target_y - car.car_y) * sin_yaw;
-        float ty_earth = (car.target_x - car.car_x) * sin_yaw + (car.target_y - car.car_y) * cos_yaw;
+        float tx_earth = car.target_x * cos_yaw - car.target_y * sin_yaw;
+        float ty_earth = car.target_x * sin_yaw + car.target_y * cos_yaw;
 
         if (ctx.has_prev && ctx.prev_car_dist < MERGE_JUMP_MAX_DIST_CM) {
             float dx = tx_earth - ctx.prev_tx_raw;
@@ -202,7 +202,7 @@ void CarCtrl_Update(void) {
             ctx.last_jump = jump; // 保存 ACTIVE 状态下的跳变距离供串口打印
             if (jump > MERGE_JUMP_CM) {
                 // 用跳变前(上一帧)的旧信标距离算倒计时, 不是新信标
-                ctx.cd_end_ms = cnt + ComputeArrivalMs(ctx.prev_car_dist) + 500;
+                ctx.cd_end_ms = cnt + ComputeArrivalMs(ctx.prev_car_dist) + 1000;
                 ctx.cd_vx_cm = ctx.last_vx * ENCODER_MPS_TO_CMPS;
                 ctx.cd_vy_cm = ctx.last_vy * ENCODER_MPS_TO_CMPS;
                 ctx.state = TRACK_COUNTDOWN;

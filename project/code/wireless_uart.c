@@ -135,6 +135,8 @@ void wireless_uart_output_status(void){
     wireless_uart_send_float(ctx.last_jump);             // 帧间跳变距离 (阈值是50)
     wireless_uart_send_string(",");
     wireless_uart_send_int(ctx.val_has_prev_pos);        // 坐标基准是否已被清空
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(car.car_x);
     wireless_uart_send_string("\n");
 }
 
