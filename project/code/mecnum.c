@@ -5,6 +5,7 @@
 // [新增] volatile: EN 在 ISR (Mecanum_Control_Loop) 和主循环之间共享，必须 volatile 防止编译器缓存
 volatile int EN = 1;
 float f_t = 0;
+int rush_sign = 0;
 // [参数调整] 针对增量式PID (dt=0.001s) 的调优参数
 // KP=3500: 0.5m/s 误差时提供 1750 的基础PWM，确保启动有力
 // KI=3000: 0.5m/s 误差时每秒增加 1500 PWM (3000*0.5*0.001*1000)，消除静差只需约0.5-1秒
@@ -177,40 +178,64 @@ void Mecanum_Unlock(void) {
     PID_Reset(&pid_yaw_hold);
     PID_Reset(&pid_yaw_rate);
 }
+volatile uint32_t sys_time_ms = 0;
+volatile uint32_t dash_end_time = 0;          // [重构] 融合盲冲绝对结束物理时间
+volatile uint32_t rush_cooldown_end_time = 0; // [重构] 防重入冷却绝对结束时间
+
 void Visual_Control_Loop(void) {
+    static uint32_t last_time = 0;
+    uint32_t current_time = sys_time_ms;
+    uint32_t dt = current_time - last_time;
+    last_time = current_time;
+    
+    // 无线打印真实执行间隔
+    wireless_uart_send_string("dt:");
+    wireless_uart_send_int((int32_t)dt);
+    wireless_uart_send_string("\r\n");
+
     static uint16_t lost_cnt = 0;
     static float last_vx = 0.0f;
     static float last_vy = 0.0f;
     static uint16_t is_edge = 0;
     static uint16_t valid_track_cnt = 0; // [新增] 连续有效跟踪帧数
-    static int dash_frames = 0;          // [新增] 融合盲冲倒数帧数
 
     static float prev_target_x = 0.0f, prev_target_y = 0.0f;
     static uint8_t has_prev_target = 0;
-    static uint8_t merge_coast = 0;
+    static uint32_t merge_coast_end_time = 0; // [重构] 跳变滑行物理时间
     static float prev_car_dist = 0.0f;
-
+    //if(rush_sign) rush_sign = 0; 
+    
     if (target_vel.unlock) {
-        // [隐患修复3]: 绝对接管系统。一旦盲冲启动（dash_frames > 0），无视后续一切视觉状态，强制执行到底。
-        // 这防止了无人机中途断连或者状态闪烁导致盲冲意外中止的问题。
-        if (dash_frames > 0) {
-            dash_frames--;
-            Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
-            if (dash_frames == 0) {
-                Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 冲刺结束，停车
+        // [隐患修复3]: 绝对物理时钟接管系统。一旦盲冲启动，无视后续一切视觉状态强制执行，直到绝对物理时间到达。
+        // 这彻底解决了无人机丢包、相机曝光导致单帧时长被放大所引发的冲刺距离失控问题。
+        if (dash_end_time > 0) {
+            if (sys_time_ms >= dash_end_time) {
+                Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 冲刺物理时间到达，精准刹车
                 
                 // [隐患修复5]: 彻底清空遗留速度状态！
-                // 否则，下一帧不再被此 return 拦截时，会带着旧的 last_vx 误入状态 1/2 的传统衰减滑行，导致严重冲过头
                 last_vx = 0.0f;
                 last_vy = 0.0f;
                 lost_cnt = COAST_CNT + 1; // 让普通的滑行计时器直接过期
                 valid_track_cnt = 0;
+                dash_end_time = 0;
+                rush_cooldown_end_time = sys_time_ms + 1000; // 开启绝对物理 1秒 冷却，防止连冲
+            } else {
+                Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+                rush_sign = 1;
             }
             return; // 提前退出，屏蔽后续视觉解析！
         }
 
         // 0: 全丢, 1: 仅小车, 2: 仅信标, 3: 都有, 4: 发生近距离融合（盲冲）
         uint8_t locked_state = (uint8_t)uart_data[5]; 
+        rush_sign = 0;
+
+        // [隐患修复] 一旦丢失双目标锁定（进入单目标丢失、全丢、或融合盲冲），
+        // 必须立刻清空“上一个目标的记忆”。防止在远处重新点亮信标时，因坐标突变引发漫长的防抖滑行。
+        if (locked_state != 3) {
+            has_prev_target = 0;
+            merge_coast_end_time = 0;
+        }
 
         // ==========================================
         // 状态 3：双目标锁定 (正常追踪)
@@ -225,7 +250,7 @@ void Visual_Control_Loop(void) {
                 float dx = uart_data[2] - prev_target_x;
                 float dy = uart_data[3] - prev_target_y;
                 if (sqrtf(dx * dx + dy * dy) > MERGE_JUMP_THRESHOLD) {
-                    merge_coast = MERGE_COAST_FRAMES;
+                    merge_coast_end_time = sys_time_ms + 400; // 绝对物理过滤 400 毫秒跳变
                 }
             }
             prev_target_x = uart_data[2];
@@ -233,10 +258,10 @@ void Visual_Control_Loop(void) {
             prev_car_dist = car_target_dist;
             has_prev_target = 1;
 
-            if (merge_coast > 0) {
-                merge_coast--;
-                Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+            if (merge_coast_end_time > 0 && sys_time_ms < merge_coast_end_time) {
+                Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); // 在此期间保持上一次的速度
             } else {
+                merge_coast_end_time = 0;
                 ang_out = angle;
                 dist_out = dist;
 
@@ -254,7 +279,7 @@ void Visual_Control_Loop(void) {
             }
 
             lost_cnt = 0;
-            dash_frames = 0;
+            dash_end_time = 0;
             if (valid_track_cnt < 1000) valid_track_cnt++; // 累积有效帧
             
             // 判断小车与信标之间的相对距离是否超过 200cm
@@ -265,24 +290,28 @@ void Visual_Control_Loop(void) {
         // ==========================================
         else if (locked_state == 4) {
             if (!is_edge) {
-                // 在中心丢失，极大可能是近距离融合，执行精准盲冲
-                if (dash_frames == 0 && valid_track_cnt > 0) {
+                uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
+                // 在中心丢失，极大可能是近距离融合，执行硬实时绝对精确盲冲 (加入1秒防重入冷却)
+                if (dash_end_time == 0 && valid_track_cnt > 0 && !is_cooldown) {
                     float speed_sq = last_vx * last_vx + last_vy * last_vy;
                     float speed = sqrtf(speed_sq);
                     if (speed < 0.1f) speed = 0.1f; // 防除零
                     
-                    // 物理换算 (约20ms一帧): 时间 = 距离(cm)/100 / 速度
-                    dash_frames = (int)((prev_car_dist / 100.0f) / speed / 0.02f);
-                    dash_frames += 10; // 追加 200ms (10帧) 的余量以确保完全覆盖信标
+                    // 物理绝对时间换算: 时间(s) = 距离(m) / 速度(m/s)
+                    float duration_sec = (prev_car_dist / 100.0f) / speed;
+                    uint32_t duration_ms = (uint32_t)(duration_sec * 1000.0f) - 150; // 追加 200ms 余量确保越过信标
                     
-                    // [隐患修复4]: 限制盲冲最高帧数 50帧=1秒，防止距离极大或速度极小时算出天文数字直接失控
-                    if (dash_frames > 40) dash_frames = 40;
+                    // [隐患修复4]: 限制盲冲最高物理时间为 800 毫秒，防止算出天文数字失控
+                    if (duration_ms > 600) duration_ms = 600;
+                    if (duration_ms < 100) duration_ms = 100;
+                    // 挂载绝对硬实时物理定时器
+                    dash_end_time = sys_time_ms + duration_ms;
                     
                     // 第一帧立马执行
-                    dash_frames--;
                     Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
-                } else if (dash_frames == 0) {
-                    // [指令真空填补]: 突兀的跳变或者不合法的融合（如未经历状态3）
+                    rush_sign = 1;
+                } else if (dash_end_time == 0) {
+                    // [指令真空填补]: 突兀的跳变或者不合法的融合（如冷却期内或未经历状态3）
                     // 绝不信任该孤立噪点，立刻停车保平安，并清空可能越界的累积
                     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
                     valid_track_cnt = 0;
@@ -336,12 +365,13 @@ void Visual_Control_Loop(void) {
             Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); 
             lost_cnt = COAST_CNT + 1; 
             valid_track_cnt = 0;
-            dash_frames = 0;
+            dash_end_time = 0;
         }
     }
 }
 
 void Mecanum_Control_Loop(void) {
+    sys_time_ms++;
 
     // 1. 获取反馈速度
     Encoder_GetCount();
@@ -356,6 +386,14 @@ void Mecanum_Control_Loop(void) {
     }else{
         Mecanum_Stop();
         return;
+    }
+
+    // [最后一道防线] 硬件级绝对时间刹车：如果系统处于盲冲且绝对时间已到，强行归零指令。
+    // 这填补了主循环串口长时间无数据时无法及时刹车的空窗期隐患。
+    if (dash_end_time > 0 && sys_time_ms >= dash_end_time) {
+        target_vel.vx = 0.0f;
+        target_vel.vy = 0.0f;
+        target_vel.wz = 0.0f;
     }
 
     // ==========================================================
