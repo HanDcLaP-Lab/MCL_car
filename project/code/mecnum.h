@@ -39,7 +39,8 @@
 
 //记忆功能
 // 记忆与视觉边界功能
-#define COAST_CNT      20        // 目标丢失后的记忆滑行帧数 (每帧约20ms，3帧即60ms)
+#define COAST_CNT      20        // 保留给边缘防闪烁/历史逻辑使用
+#define COAST_HOLD_MS  100U      // 中心丢失后的绝对时间保持窗口 (ms)
 #define EDGE_CNT  30
 #define COAST_DECAY    1.0f   // 速度衰减系数 (每次循环衰减)
 //#define EDGE_X         50.0f    // 前后方向边缘视野界限 (cm)

@@ -204,6 +204,7 @@ void Visual_Control_Loop(void) {
     static float prev_target_x = 0.0f, prev_target_y = 0.0f;
     static uint8_t has_prev_target = 0;
     static uint32_t merge_coast_end_time = 0; // [重构] 跳变滑行物理时间
+    static uint32_t coast_end_time = 0;       // 中心丢失后保持速度的绝对结束时间
     static float prev_car_dist = 0.0f;
     //if(rush_sign) rush_sign = 0; 
     
@@ -282,6 +283,7 @@ void Visual_Control_Loop(void) {
 
             lost_cnt = 0;
             dash_end_time = 0;
+            coast_end_time = 0;
             if (valid_track_cnt < 1000) valid_track_cnt++; // 累积有效帧
             
             // 判断小车与信标之间的相对距离是否超过 200cm
@@ -292,6 +294,7 @@ void Visual_Control_Loop(void) {
         // ==========================================
         else if (locked_state == 4) {
             if (!is_edge) {
+                coast_end_time = 0;
                 uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
                 // 在中心丢失，极大可能是近距离融合，执行硬实时绝对精确盲冲 (加入1秒防重入冷却)
                 if (dash_end_time == 0 && valid_track_cnt > 0 && !is_cooldown) {
@@ -319,6 +322,7 @@ void Visual_Control_Loop(void) {
                     valid_track_cnt = 0;
                 }
             } else {
+                coast_end_time = 0;
                 // 在边缘误判融合，按边缘防闪烁逻辑处理
                 if (valid_track_cnt > 10 && lost_cnt < 5) {
                     lost_cnt++;
@@ -337,6 +341,7 @@ void Visual_Control_Loop(void) {
         // ==========================================
         else if (locked_state == 2 || locked_state == 1) {
             if (is_edge) {
+                coast_end_time = 0;
                 // 边缘丢失防闪烁: 只有稳定跟踪后才允许滑行5帧，否则立刻刹车
                 if (valid_track_cnt > 10 && lost_cnt < 5) {
                     lost_cnt++;
@@ -348,15 +353,17 @@ void Visual_Control_Loop(void) {
                     if (lost_cnt >= 5) valid_track_cnt = 0;
                 }
             } else {
-                // 中心常规丢失，执行原有的衰减逻辑
-                if (lost_cnt <= COAST_CNT) {
-                    lost_cnt++;
-                    last_vx *= COAST_DECAY; 
-                    last_vy *= COAST_DECAY;
+                // 中心常规丢失，按硬件毫秒计时保持速度 100ms
+                if (coast_end_time == 0) {
+                    coast_end_time = sys_time_ms + COAST_HOLD_MS;
+                }
+                if (sys_time_ms < coast_end_time) {
                     Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); 
                 } else {
                     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); 
                     valid_track_cnt = 0;
+                    lost_cnt = COAST_CNT + 1;
+                    coast_end_time = 0;
                 }
             }
         }
@@ -368,6 +375,7 @@ void Visual_Control_Loop(void) {
             lost_cnt = COAST_CNT + 1; 
             valid_track_cnt = 0;
             dash_end_time = 0;
+            coast_end_time = 0;
         }
     }
 }
