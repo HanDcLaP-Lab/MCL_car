@@ -104,8 +104,11 @@ int main(void)
             
 
             // [修复] 急停判断移入此处：仅在收到有效数据后执行，避免启动时 uart_data[6] 全零误触发
-            //if(uart_data[6] < 0.5f) EN = 0; // [6] car_en — 急停使能标志 (0=急停, 1=正常)
-            if(uart_data[6] > 0.5f && last_en < 0.5f) EN = 1;
+            if(uart_data[6] < 0.5f) {
+                Mecanum_Stop(); // [6] car_en — 急停使能标志 (0=急停, 1=正常)
+            } else if(last_en < 0.5f) {
+                Mecanum_Unlock();
+            }
             last_en = uart_data[6];
 
             Visual_Control_Loop();

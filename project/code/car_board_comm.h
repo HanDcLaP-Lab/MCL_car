@@ -17,7 +17,7 @@
 //   [2] target_ground_pos.x — 目标地面X坐标 (cm)
 //   [3] target_ground_pos.y — 目标地面Y坐标 (cm)
 //   [4] drone_yaw           — 无人机偏航角 (deg, 顺时针正)
-//   [5] locked_state        — 目标锁定状态 (0=全丢/1=仅小车/2=仅信标/3=都有)
+//   [5] locked_state        — 目标锁定状态 (0=全丢/1=仅小车/2=仅信标/3=都有/4=近距离融合盲冲)
 //   [6] car_en              — 急停使能标志 (0=急停, 1=正常)
 //   [7] car_target_dist     — 车-信标地面距离 (cm)
 extern float uart_data[8]; 

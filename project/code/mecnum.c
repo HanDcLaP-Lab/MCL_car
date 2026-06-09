@@ -183,15 +183,17 @@ volatile uint32_t dash_end_time = 0;          // [重构] 融合盲冲绝对结�
 volatile uint32_t rush_cooldown_end_time = 0; // [重构] 防重入冷却绝对结束时间
 
 void Visual_Control_Loop(void) {
+#if 0
     static uint32_t last_time = 0;
     uint32_t current_time = sys_time_ms;
     uint32_t dt = current_time - last_time;
     last_time = current_time;
     
-    // 无线打印真实执行间隔
+    // 调试真实执行间隔时可临时打开，常开会干扰控制周期和无线带宽。
     wireless_uart_send_string("dt:");
     wireless_uart_send_int((int32_t)dt);
     wireless_uart_send_string("\r\n");
+#endif
 
     static uint16_t lost_cnt = 0;
     static float last_vx = 0.0f;
@@ -299,13 +301,13 @@ void Visual_Control_Loop(void) {
                     
                     // 物理绝对时间换算: 时间(s) = 距离(m) / 速度(m/s)
                     float duration_sec = (prev_car_dist / 100.0f) / speed;
-                    uint32_t duration_ms = (uint32_t)(duration_sec * 1000.0f) - 150; // 追加 200ms 余量确保越过信标
+                    int32_t duration_ms = (int32_t)(duration_sec * 1000.0f) - 150; // 提前刹车，避免冲过信标
                     
                     // [隐患修复4]: 限制盲冲最高物理时间为 800 毫秒，防止算出天文数字失控
                     if (duration_ms > 600) duration_ms = 600;
                     if (duration_ms < 100) duration_ms = 100;
                     // 挂载绝对硬实时物理定时器
-                    dash_end_time = sys_time_ms + duration_ms;
+                    dash_end_time = sys_time_ms + (uint32_t)duration_ms;
                     
                     // 第一帧立马执行
                     Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
