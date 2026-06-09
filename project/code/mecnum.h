@@ -18,8 +18,8 @@
 
 // 【新增】加速度限制 (单位: m/s^2 和 rad/s^2)
 // 例如: 2.0m/s^2 意味着从 0 加速到 1.0m/s 需要 0.5秒
-#define MAX_ACCEL_X  8.0f
-#define MAX_ACCEL_Y  8.0f
+#define MAX_ACCEL_X  100.0f
+#define MAX_ACCEL_Y  100.0f
 #define MAX_ACCEL_W  10.0f
 
 
@@ -52,6 +52,7 @@
 
 extern volatile int EN;
 extern float f_t;
+extern int rush_sign;
 // ================== 结构体定义 ==================
 typedef struct {
     float vx;       // X轴速度 (m/s)

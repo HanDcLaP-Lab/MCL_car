@@ -57,12 +57,17 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务�
     //Current_speed_display();
     //wireless_uart_output_imu();
     //print_imu();
-    wireless_uart_output_target();
+    //wireless_uart_output_target();
     // printf("%.2f," , uart_data[0]);
     // printf("%.2f," , uart_data[1]);
     // printf("%.2f," , uart_data[2]);
     // printf("%.2f," , uart_data[6]);
     // printf("%.2f\n" , uart_data[3]);
+    // wireless_uart_send_int((uint8_t)uart_data[5]);
+    // wireless_uart_send_string(",");
+    // wireless_uart_send_int(rush_sign);
+    // wireless_uart_send_string("\n");
+    //if(rush_sign) rush_sign = 0;
 
 }
 
