@@ -27,6 +27,7 @@ typedef struct {
 extern Encoder encoder_data;
 void Encoder_Init();
 void Encoder_GetCount();
+void Encoder_Test_Print(void); // [新增] 用于打印测试编码器读数
 
 
 #endif

@@ -6,6 +6,15 @@
 
 Drone-guided mecanum-wheel autonomous chase car. An overhead drone detects the car + target via camera, sends ground coordinates over wireless UART. The car computes relative position, then drives 4 mecanum wheels (omnidirectional) to chase the target while maintaining heading via cascade yaw PID.
 
+## CODEX WORKFLOW
+
+- Codex MUST perform all repository changes on the `codex_branch` branch. If the current branch is different, switch to `codex_branch` before editing; create it from the current work base if it does not exist.
+- Before every code or documentation edit, Codex MUST check whether other local or remote branches have newer commits, preferably with `git fetch --all --prune`, `git branch --all --verbose --no-abbrev`, and a short `git log --oneline --decorate --graph --all`.
+- Codex SHOULD pull, merge, cherry-pick, or otherwise bring in relevant newer commits before editing when they affect the files or behavior being changed. Codex MUST NOT merge unrelated branch history just because it is newer.
+- Codex MUST keep user or other-agent changes intact. Do not reset, checkout, or discard existing work unless the user explicitly asks for that operation.
+- During reviews, Codex SHOULD mention stale or mismatched comments after parameter tuning, but MUST NOT treat them as bugs that need code fixes by default.
+- Continuous or repeated parameter tuning is expected in this project. Codex SHOULD mention it when relevant, but MUST NOT classify ongoing tuning itself as a defect or try to "fix" it unless the user asks.
+
 ## STRUCTURE
 
 ```

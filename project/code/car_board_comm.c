@@ -85,17 +85,42 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                 
             case STEP_TAIL:
                 if (read_byte == 0x7F) {                     
-                    // 校验完全通过，赋值
+                    // [隐患修复 P3.11]: 增加数据合法性防御校验，防止 NaN/Inf 及离谱数据冲垮控制环
+                    uint8_t data_valid = 1;
                     for (int i = 0; i < 8; i++) {
-                        uart_data[i] = temp_pack.f_data[i];
+                        float f = temp_pack.f_data[i];
+                        // 剔除 NaN (f != f) 和极大异常值(Inf等)
+                        if (f != f || f > 1e6f || f < -1e6f) { 
+                            data_valid = 0;
+                            break;
+                        }
                     }
-                    board_rx_complete_flag = 1;
-                    // 仅在调试模式下打印成功信息
-                    if (debug_en) {
-                        rx_cnt++;
-                        // [优化] 每接收50包打印一次，防止打印太快阻塞CPU
-                        if (rx_cnt % 50 == 0) {
-                            //printf("RxCnt:%d [OK] X:%.2f Y:%.2f\r\n", rx_cnt, uart_data[0], uart_data[1]);
+                    
+                    // 业务语义校验
+                    if (data_valid) {
+                        float state_f = temp_pack.f_data[5];
+                        float en_f    = temp_pack.f_data[6];
+                        float dist_f  = temp_pack.f_data[7];
+                        
+                        if (state_f < 0.0f || state_f > 4.5f) data_valid = 0;       // 状态只能是 0,1,2,3,4
+                        if (en_f < 0.0f || en_f > 1.5f) data_valid = 0;             // 使能只能是 0,1
+                        if (dist_f < 0.0f || dist_f > 5000.0f) data_valid = 0;      // 距离不可能小于0或大于50米(5000cm)
+                    }
+
+                    if (data_valid) {
+                        // 校验完全通过，赋值
+                        for (int i = 0; i < 8; i++) {
+                            uart_data[i] = temp_pack.f_data[i];
+                        }
+                        board_rx_complete_flag = 1;
+                        
+                        // 仅在调试模式下打印成功信息
+                        if (debug_en) {
+                            rx_cnt++;
+                            // [优化] 每接收50包打印一次，防止打印太快阻塞CPU
+                            if (rx_cnt % 50 == 0) {
+                                //printf("RxCnt:%d [OK] X:%.2f Y:%.2f\r\n", rx_cnt, uart_data[0], uart_data[1]);
+                            }
                         }
                     }
                 } else {

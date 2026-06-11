@@ -133,6 +133,24 @@ void Mecanum_Init(void) {
     target_vel.unlock = true;
 }
 
+// --- [重构] 抽离核心状态为全局，以便底层定时器与急停函数能强制干预 ---
+volatile float visual_last_vx = 0.0f;
+volatile float visual_last_vy = 0.0f;
+volatile uint32_t edge_coast_end_time = 0;    // 替代原 lost_cnt 的绝对物理计时器
+volatile uint32_t visual_coast_end_time = 0;  // 提取原 coast_end_time
+
+extern volatile uint32_t dash_end_time;
+extern volatile uint32_t rush_cooldown_end_time;
+
+void Visual_State_Reset(void) {
+    dash_end_time = 0;
+    rush_cooldown_end_time = 0;
+    visual_last_vx = 0.0f;
+    visual_last_vy = 0.0f;
+    edge_coast_end_time = 0;
+    visual_coast_end_time = 0;
+}
+
 void Mecanum_Stop(void) {
     target_vel.unlock = false;
     EN = 0;
@@ -156,6 +174,7 @@ void Mecanum_Stop(void) {
 
     motor_output.lf = 0; motor_output.rf = 0;
     motor_output.lb = 0; motor_output.rb = 0;
+    Visual_State_Reset();
 }
 
 void Mecanum_Unlock(void) {
@@ -177,6 +196,7 @@ void Mecanum_Unlock(void) {
     PID_Reset(&pid_rb);
     PID_Reset(&pid_yaw_hold);
     PID_Reset(&pid_yaw_rate);
+    Visual_State_Reset();
 }
 volatile uint32_t sys_time_ms = 0;
 volatile uint32_t dash_end_time = 0;          // [重构] 融合盲冲绝对结束物理时间
@@ -195,16 +215,16 @@ void Visual_Control_Loop(void) {
     wireless_uart_send_string("\r\n");
 #endif
 
-    static uint16_t lost_cnt = 0;
-    static float last_vx = 0.0f;
-    static float last_vy = 0.0f;
     static uint16_t is_edge = 0;
     static uint16_t valid_track_cnt = 0; // [新增] 连续有效跟踪帧数
+
+    if (valid_track_cnt == 0) {
+        is_edge = 0; // [隐患修复 P2.10]: 追踪彻底断开时，清空老旧的边缘记忆
+    }
 
     static float prev_target_x = 0.0f, prev_target_y = 0.0f;
     static uint8_t has_prev_target = 0;
     static uint32_t merge_coast_end_time = 0; // [重构] 跳变滑行物理时间
-    static uint32_t coast_end_time = 0;       // 中心丢失后保持速度的绝对结束时间
     static float prev_car_dist = 0.0f;
     //if(rush_sign) rush_sign = 0; 
     
@@ -212,20 +232,8 @@ void Visual_Control_Loop(void) {
         // [隐患修复3]: 绝对物理时钟接管系统。一旦盲冲启动，无视后续一切视觉状态强制执行，直到绝对物理时间到达。
         // 这彻底解决了无人机丢包、相机曝光导致单帧时长被放大所引发的冲刺距离失控问题。
         if (dash_end_time > 0) {
-            if (sys_time_ms >= dash_end_time) {
-                Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); // 冲刺物理时间到达，精准刹车
-                
-                // [隐患修复5]: 彻底清空遗留速度状态！
-                last_vx = 0.0f;
-                last_vy = 0.0f;
-                lost_cnt = COAST_CNT + 1; // 让普通的滑行计时器直接过期
-                valid_track_cnt = 0;
-                dash_end_time = 0;
-                rush_cooldown_end_time = sys_time_ms + 1000; // 开启绝对物理 1秒 冷却，防止连冲
-            } else {
-                Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
-                rush_sign = 1;
-            }
+            Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+            rush_sign = 1;
             return; // 提前退出，屏蔽后续视觉解析！
         }
 
@@ -262,7 +270,7 @@ void Visual_Control_Loop(void) {
             has_prev_target = 1;
 
             if (merge_coast_end_time > 0 && sys_time_ms < merge_coast_end_time) {
-                Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); // 在此期间保持上一次的速度
+                Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f); // 在此期间保持上一次的速度
             } else {
                 merge_coast_end_time = 0;
                 ang_out = angle;
@@ -277,13 +285,13 @@ void Visual_Control_Loop(void) {
 
                 Mecanum_Set_Velocity(target_speed_x, target_speed_y, 0.0f);
 
-                last_vx = target_speed_x;
-                last_vy = target_speed_y;
+                visual_last_vx = target_speed_x;
+                visual_last_vy = target_speed_y;
             }
 
-            lost_cnt = 0;
+            edge_coast_end_time = 0;
             dash_end_time = 0;
-            coast_end_time = 0;
+            visual_coast_end_time = 0;
             if (valid_track_cnt < 1000) valid_track_cnt++; // 累积有效帧
             
             // 判断小车与信标之间的相对距离是否超过 200cm
@@ -294,11 +302,11 @@ void Visual_Control_Loop(void) {
         // ==========================================
         else if (locked_state == 4) {
             if (!is_edge) {
-                coast_end_time = 0;
+                visual_coast_end_time = 0;
                 uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
                 // 在中心丢失，极大可能是近距离融合，执行硬实时绝对精确盲冲 (加入1秒防重入冷却)
                 if (dash_end_time == 0 && valid_track_cnt > 0 && !is_cooldown) {
-                    float speed_sq = last_vx * last_vx + last_vy * last_vy;
+                    float speed_sq = visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy;
                     float speed = sqrtf(speed_sq);
                     if (speed < 0.1f) speed = 0.1f; // 防除零
                     
@@ -313,7 +321,7 @@ void Visual_Control_Loop(void) {
                     dash_end_time = sys_time_ms + (uint32_t)duration_ms;
                     
                     // 第一帧立马执行
-                    Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+                    Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                     rush_sign = 1;
                 } else if (dash_end_time == 0) {
                     // [指令真空填补]: 突兀的跳变或者不合法的融合（如冷却期内或未经历状态3）
@@ -322,17 +330,21 @@ void Visual_Control_Loop(void) {
                     valid_track_cnt = 0;
                 }
             } else {
-                coast_end_time = 0;
+                visual_coast_end_time = 0;
                 // 在边缘误判融合，按边缘防闪烁逻辑处理
-                if (valid_track_cnt > 10 && lost_cnt < 5) {
-                    lost_cnt++;
-                    last_vx *= COAST_DECAY; 
-                    last_vy *= COAST_DECAY;
-                    Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+                if (valid_track_cnt > 10) {
+                    if (edge_coast_end_time == 0) edge_coast_end_time = sys_time_ms + 250;
+                    if (sys_time_ms < edge_coast_end_time) {
+                        visual_last_vx *= COAST_DECAY; 
+                        visual_last_vy *= COAST_DECAY;
+                        Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+                    } else {
+                        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+                        valid_track_cnt = 0;
+                    }
                 } else {
                     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
                     valid_track_cnt = 0;
-                    lost_cnt = COAST_CNT + 1; // 强制过期，防止停滞
                 }
             }
         }
@@ -341,29 +353,34 @@ void Visual_Control_Loop(void) {
         // ==========================================
         else if (locked_state == 2 || locked_state == 1) {
             if (is_edge) {
-                coast_end_time = 0;
-                // 边缘丢失防闪烁: 只有稳定跟踪后才允许滑行5帧，否则立刻刹车
-                if (valid_track_cnt > 10 && lost_cnt < 5) {
-                    lost_cnt++;
-                    last_vx *= COAST_DECAY; 
-                    last_vy *= COAST_DECAY;
-                    Mecanum_Set_Velocity(last_vx, last_vy, 0.0f);
+                visual_coast_end_time = 0;
+                // 边缘丢失防闪烁: 统一使用物理计时器 250ms 滑行
+                if (valid_track_cnt > 10) {
+                    if (edge_coast_end_time == 0) edge_coast_end_time = sys_time_ms + 250;
+                    if (sys_time_ms < edge_coast_end_time) {
+                        visual_last_vx *= COAST_DECAY; 
+                        visual_last_vy *= COAST_DECAY;
+                        Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+                    } else {
+                        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+                        valid_track_cnt = 0;
+                    }
                 } else {
                     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-                    if (lost_cnt >= 5) valid_track_cnt = 0;
+                    valid_track_cnt = 0;
                 }
             } else {
                 // 中心常规丢失，按硬件毫秒计时保持速度 100ms
-                if (coast_end_time == 0) {
-                    coast_end_time = sys_time_ms + COAST_HOLD_MS;
+                if (visual_coast_end_time == 0) {
+                    visual_coast_end_time = sys_time_ms + COAST_HOLD_MS;
                 }
-                if (sys_time_ms < coast_end_time) {
-                    Mecanum_Set_Velocity(last_vx, last_vy, 0.0f); 
+                if (sys_time_ms < visual_coast_end_time) {
+                    Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f); 
                 } else {
                     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); 
                     valid_track_cnt = 0;
-                    lost_cnt = COAST_CNT + 1;
-                    coast_end_time = 0;
+                    edge_coast_end_time = 0;
+                    visual_coast_end_time = 0;
                 }
             }
         }
@@ -372,10 +389,10 @@ void Visual_Control_Loop(void) {
         // ==========================================
         else {
             Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); 
-            lost_cnt = COAST_CNT + 1; 
+            edge_coast_end_time = 0; 
             valid_track_cnt = 0;
             dash_end_time = 0;
-            coast_end_time = 0;
+            visual_coast_end_time = 0;
         }
     }
 }
@@ -398,12 +415,26 @@ void Mecanum_Control_Loop(void) {
         return;
     }
 
-    // [最后一道防线] 硬件级绝对时间刹车：如果系统处于盲冲且绝对时间已到，强行归零指令。
+    // [最后一道防线] 硬件级绝对时间刹车：如果系统处于盲冲或滑行且绝对时间已到，强行归零指令。
     // 这填补了主循环串口长时间无数据时无法及时刹车的空窗期隐患。
     if (dash_end_time > 0 && sys_time_ms >= dash_end_time) {
         target_vel.vx = 0.0f;
         target_vel.vy = 0.0f;
         target_vel.wz = 0.0f;
+        Visual_State_Reset();
+        rush_cooldown_end_time = sys_time_ms + 1000; // [修复] 盲冲结束，强制进入 1 秒冷却，防止 0 速度无限重入
+    }
+    else if (visual_coast_end_time > 0 && sys_time_ms >= visual_coast_end_time) {
+        target_vel.vx = 0.0f;
+        target_vel.vy = 0.0f;
+        target_vel.wz = 0.0f;
+        Visual_State_Reset();
+    }
+    else if (edge_coast_end_time > 0 && sys_time_ms >= edge_coast_end_time) {
+        target_vel.vx = 0.0f;
+        target_vel.vy = 0.0f;
+        target_vel.wz = 0.0f;
+        Visual_State_Reset();
     }
 
     // ==========================================================

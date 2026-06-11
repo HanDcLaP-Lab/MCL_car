@@ -17,17 +17,24 @@ void Encoder_Init(){
 void Encoder_GetCount(){
     encoder_data.lf = encoder_get_count(ENCODER_QUAD_lf) / CONTROL_DT * RPM_TO_MPS;
     encoder_data.lf = -Kalman_Update(&K_lf, encoder_data.lf) ;
-    encoder_clear_count(ENCODER_QUAD_lf);
 
     encoder_data.rf = encoder_get_count(ENCODER_QUAD_rf) / CONTROL_DT * RPM_TO_MPS;
     encoder_data.rf = Kalman_Update(&K_rf, encoder_data.rf);
-    encoder_clear_count(ENCODER_QUAD_rf);
 
     encoder_data.lb = encoder_get_count(ENCODER_QUAD_lb) / CONTROL_DT * RPM_TO_MPS;
     encoder_data.lb = -Kalman_Update(&K_lb, encoder_data.lb);
-    encoder_clear_count(ENCODER_QUAD_lb);
 
     encoder_data.rb = encoder_get_count(ENCODER_QUAD_rb) / CONTROL_DT * RPM_TO_MPS;
     encoder_data.rb = Kalman_Update(&K_rb, encoder_data.rb);
-    encoder_clear_count(ENCODER_QUAD_rb);
+}
+
+void Encoder_Test_Print(void) {
+    // 为了防止打印过快卡死主循环或占用过多总线资源，加一个简单的分频计数器
+    static uint16_t print_cnt = 0;
+    if (++print_cnt >= 50) { 
+        print_cnt = 0;
+        // 打印四个轮子的过滤后速度 (单位: m/s)
+        printf("%.2f ,%.2f ,%.2f ,%.2f\n", 
+               encoder_data.lf, encoder_data.rf, encoder_data.lb, encoder_data.rb);
+    }
 }
