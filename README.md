@@ -143,3 +143,47 @@ imu位置更新，姿态角映射相应更改
 [修复] merge_coast 到期后重新触发跳变检测导致死循环: 到期帧跳过跳变检测直接接受新信标位置, 滑行期间若目标回归原信标附近则提前退出。
 [优化] sort_lights 选信标由"距画面中心最近"改为"距小车最近"(无小车时回退), 多信标场景优先跟踪近车信标。
 [清理] 删除死宏 COAST_CNT/EDGE_CNT/EDGE_Y/COAST_DECAY/MERGE_DIST_THRESHOLD, 更新 AGENTS.md 常量表。
+
+6.12d
+[重构] 底盘使能控制由"EN + target_vel.unlock 双变量"重构为单一"解除武装原因位掩码 disarm_flags"。
+  - 删除死变量 EN(原乘子恒为1,无作用)与 Target_t.unlock 字段。
+  - 删除 Mecanum_Stop()/Mecanum_Unlock(), 新增 Chassis_Block(reason)/Chassis_Unblock(reason)/Chassis_Is_Armed()/Chassis_Get_Disarm_Flags()。
+  - 三个停车来源各占一位且互相独立: DISARM_UNCALIBRATED / DISARM_COMM_LOST / DISARM_MANUAL, 仅当 disarm_flags==0 时底盘武装(允许动)。
+[修复] 重连不再覆盖人工急停: 收到下传数据只清 DISARM_COMM_LOST 位, 人工急停(ch8)仍置位则保持停车, 必须人工解除(ch8=0)。
+[优化] 校准门控改用幂等 Block/Unblock, 消除校准期间 1ms ISR 反复执行重量级停车清理的浪费。
+[清理] 删除死代码 wireless_uart_get_() 中"收到任意字节即 Mecanum_Stop()"的地雷调用; 删除启动冗余解锁(改由 ISR 在校准完成时自动解锁)。
+[说明] 无人机对小车的急停指令(uart_data[6] car_en)保持不消费状态(此前已删), 本次未恢复。
+
+---
+
+## 底盘使能状态机 (6.12d 重构后)
+
+底盘是否输出动力, 由单一掩码 `disarm_flags` 决定: **三位全清(==0)才武装**。
+每个停车来源只置/清自己那一位, 互不干扰; 任一位为 1 即锁定停车。
+
+```
+                       disarm_flags (uint8_t, 上电默认 = DISARM_UNCALIBRATED)
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │ bit0 DISARM_UNCALIBRATED   置: IMU 未校准      清: IMU 校准完成        │ ← 1ms ISR
+   │ bit1 DISARM_COMM_LOST      置: 看门狗>1000ms   清: 收到无人机下传数据  │ ← 主循环
+   │ bit2 DISARM_MANUAL         置: 无线 ch8 == 1   清: 无线 ch8 == 0       │ ← 调参回调
+   └──────────────────────────────────────────────────────────────────────┘
+
+        ┌─────────────────────────┐   任一 Chassis_Block(reason)    ┌──────────────────────────┐
+        │   ARMED (已武装)        │  ─────────────────────────────► │  DISARMED (锁定)         │
+        │   disarm_flags == 0     │   置位→Chassis_Apply_Stop():    │  disarm_flags != 0       │
+        │                         │   灭4路PWM/清6个PID/清视觉状态  │                          │
+        │  · 跑斜坡+yaw串级+轮速  │ ◄───────────────────────────── │  · 电机输出强制 0        │
+        │    PID, 驱动电机        │   最后一个 Chassis_Unblock 清零 │  · 控制环跳过电机赋值    │
+        │  · Visual_Control_Loop  │   →复位PID+视觉状态, 干净起步    │                          │
+        └─────────────────────────┘                                 └──────────────────────────┘
+
+   幂等: Block 同一位重复调用→直接返回(杜绝1ms狂调); Unblock 仅在清零最后一位时才复位起步。
+
+   关键安全路径 (本次修复的隐患):
+     人工急停(ch8=1) ─置bit2─► DISARMED
+        └─ 期间无人机断连 ─置bit1─► 仍 DISARMED (bit1|bit2)
+              └─ 无人机重连 ─清bit1─► 仍 DISARMED (bit2 未清) ✅ 不会自动跑起来
+                    └─ 人工解除(ch8=0) ─清bit2─► flags==0 ─► ARMED
+```
+

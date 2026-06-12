@@ -2,8 +2,6 @@
 
 #include "zf_common_headfile.h"
 #include <math.h>
-// [新增] volatile: EN 在 ISR (Mecanum_Control_Loop) 和主循环之间共享，必须 volatile 防止编译器缓存
-volatile int EN = 1;
 float f_t = 0;
 int rush_sign = 0;
 // [参数调整] 针对增量式PID (dt=0.001s) 的调优参数
@@ -130,7 +128,6 @@ void Mecanum_Init(void) {
     target_vel.vx = 0;
     target_vel.vy = 0;
     target_vel.wz = 0;
-    target_vel.unlock = true;
 }
 
 // --- [重构] 抽离核心状态为全局，以便底层定时器与急停函数能强制干预 ---
@@ -149,10 +146,22 @@ void Visual_State_Reset(void) {
     visual_coast_end_time = 0;
 }
 
-void Mecanum_Stop(void) {
-    target_vel.unlock = false;
-    EN = 0;
+// ================== 底盘使能状态机 (解除武装原因位掩码) ==================
+// 上电默认 IMU 未校准 → 锁定。仅当 disarm_flags == 0 时 Chassis_Is_Armed() 为真。
+static volatile uint8_t disarm_flags = DISARM_UNCALIBRATED;
 
+// 复位全部 PID 积分项 (解锁起步 / 锁定停车共用)
+static void Reset_All_PID(void) {
+    PID_Reset(&pid_lf);
+    PID_Reset(&pid_rf);
+    PID_Reset(&pid_lb);
+    PID_Reset(&pid_rb);
+    PID_Reset(&pid_yaw_hold);
+    PID_Reset(&pid_yaw_rate);
+}
+
+// 停车清理：归零目标/平滑速度、直接灭掉 4 路 PWM、复位 PID 与视觉状态
+static void Chassis_Apply_Stop(void) {
     smooth_vx = 0.0f;
     smooth_vy = 0.0f;
     smooth_wz = 0.0f;
@@ -161,40 +170,37 @@ void Mecanum_Stop(void) {
     pwm_set_duty(MOTOR_RF_PWM, 0);
     pwm_set_duty(MOTOR_LB_PWM, 0);
     pwm_set_duty(MOTOR_RB_PWM, 0);
-
-    // 重置 PID 积分项
-    PID_Reset(&pid_lf);
-    PID_Reset(&pid_rf);
-    PID_Reset(&pid_lb);
-    PID_Reset(&pid_rb);
-    PID_Reset(&pid_yaw_hold);
-    PID_Reset(&pid_yaw_rate);
-
+    Reset_All_PID();
     motor_output.lf = 0; motor_output.rf = 0;
     motor_output.lb = 0; motor_output.rb = 0;
     Visual_State_Reset();
 }
 
-void Mecanum_Unlock(void) {
-    target_vel.unlock = true;
-    EN = 1;
-    smooth_vx = 0.0f;
-    smooth_vy = 0.0f;
-    smooth_wz = 0.0f;
-    Mecanum_Set_Velocity(0, 0, 0);
-    pwm_set_duty(MOTOR_LF_PWM, 0);
-    pwm_set_duty(MOTOR_RF_PWM, 0);
-    pwm_set_duty(MOTOR_LB_PWM, 0);
-    pwm_set_duty(MOTOR_RB_PWM, 0);
+bool Chassis_Is_Armed(void) {
+    return disarm_flags == 0;
+}
 
-    // 重置 PID 积分项
-    PID_Reset(&pid_lf);
-    PID_Reset(&pid_rf);
-    PID_Reset(&pid_lb);
-    PID_Reset(&pid_rb);
-    PID_Reset(&pid_yaw_hold);
-    PID_Reset(&pid_yaw_rate);
-    Visual_State_Reset();
+uint8_t Chassis_Get_Disarm_Flags(void) {
+    return disarm_flags;
+}
+
+void Chassis_Block(uint8_t reason) {
+    if (disarm_flags & reason) return;          // 该原因已置位，幂等返回 (杜绝1kHz重复清理)
+    disarm_flags |= reason;
+    Chassis_Apply_Stop();                       // 新增一个解除武装原因 → 确保立即停车清理
+}
+
+void Chassis_Unblock(uint8_t reason) {
+    if (!(disarm_flags & reason)) return;       // 该原因本就未置位，幂等返回
+    disarm_flags &= ~reason;
+    if (disarm_flags == 0) {                    // disarmed→armed 跳变：干净起步
+        smooth_vx = 0.0f;
+        smooth_vy = 0.0f;
+        smooth_wz = 0.0f;
+        Mecanum_Set_Velocity(0, 0, 0);
+        Reset_All_PID();
+        Visual_State_Reset();
+    }
 }
 volatile uint32_t sys_time_ms = 0;
 volatile uint32_t dash_end_time = 0;          // [重构] 融合盲冲绝对结束物理时间
@@ -226,7 +232,7 @@ void Visual_Control_Loop(void) {
     static float prev_car_dist = 0.0f;
     //if(rush_sign) rush_sign = 0; 
     
-    if (target_vel.unlock) {
+    if (Chassis_Is_Armed()) {
         // [隐患修复3]: 绝对物理时钟接管系统。一旦盲冲启动，无视后续一切视觉状态强制执行，直到绝对物理时间到达。
         // 这彻底解决了无人机丢包、相机曝光导致单帧时长被放大所引发的冲刺距离失控问题。
         if (dash_end_time > 0) {
@@ -441,16 +447,13 @@ void Mecanum_Control_Loop(void) {
 
     // 1. 获取反馈速度
     Encoder_GetCount();
-    static uint8_t has_unlocked = 0;
 
-    // 检查 IMU 是否校准完毕并解锁底盘
+    // 检查 IMU 是否校准完毕：未校准则锁定底盘并退出。
+    // Block/Unblock 幂等，校准期间每 tick 调用也不会重复执行停车清理。
     if(imu_car_rc_data.is_calibrated == 1){
-        if(has_unlocked == 0) {
-            Mecanum_Unlock();
-            has_unlocked = 1; // 标记已解锁，以后不再重复调用
-        }
+        Chassis_Unblock(DISARM_UNCALIBRATED);
     }else{
-        Mecanum_Stop();
+        Chassis_Block(DISARM_UNCALIBRATED);
         return;
     }
 
@@ -473,7 +476,7 @@ void Mecanum_Control_Loop(void) {
     // 【核心一】只对“用户目标指令”进行斜坡平滑 (防起步打滑)
     // 根据设定的最大加速度，限制每 1ms (CONTROL_DT) 的速度变化量
     // ==========================================================
-    if (target_vel.unlock) {
+    if (Chassis_Is_Armed()) {
         float step_x = MAX_ACCEL_X * CONTROL_DT;
         float step_y = MAX_ACCEL_Y * CONTROL_DT;
         float step_w = MAX_ACCEL_W * CONTROL_DT;
@@ -504,7 +507,7 @@ void Mecanum_Control_Loop(void) {
     // ==========================================================
     float final_wz = smooth_wz; // 默认采用平滑后的目标自转速度
     
-    if (target_vel.unlock) {
+    if (Chassis_Is_Armed()) {
             // 将陀螺仪实际角速度从 deg/s 转换为 rad/s，统一量纲！
             float current_rate_rad = imu_car_rc_data.yaw_rate * ((float)M_PI / 180.0f);
 
@@ -567,12 +570,12 @@ void Mecanum_Control_Loop(void) {
     float err_lb = target_vel.v_lb - encoder_data.lb;
     float err_rb = target_vel.v_rb - encoder_data.rb;
 
-    if (target_vel.unlock) {
+    if (Chassis_Is_Armed()) {
         // 计算原始增量 PID 输出 (此时绝不能限幅)
-        motor_output.lf = EN * PID_Calculate_Incremental(&pid_lf, err_lf, CONTROL_DT);
-        motor_output.rf = EN * PID_Calculate_Incremental(&pid_rf, err_rf, CONTROL_DT);
-        motor_output.lb = EN * PID_Calculate_Incremental(&pid_lb, err_lb, CONTROL_DT);
-        motor_output.rb = EN * PID_Calculate_Incremental(&pid_rb, err_rb, CONTROL_DT);
+        motor_output.lf = PID_Calculate_Incremental(&pid_lf, err_lf, CONTROL_DT);
+        motor_output.rf = PID_Calculate_Incremental(&pid_rf, err_rf, CONTROL_DT);
+        motor_output.lb = PID_Calculate_Incremental(&pid_lb, err_lb, CONTROL_DT);
+        motor_output.rb = PID_Calculate_Incremental(&pid_rb, err_rb, CONTROL_DT);
 
         // 简单的误差死区处理，防止静止时电机高频异响抖动
         if (fabsf(target_vel.v_lf) < 0.01f && fabsf(err_lf) < 0.03f) motor_output.lf = 0;
@@ -601,7 +604,7 @@ void Mecanum_Control_Loop(void) {
     // ==========================================================
     // 5. 最终执行电机控制
     // ==========================================================
-    if (target_vel.unlock == true) {
+    if (Chassis_Is_Armed()) {
         Motor_Set_Output(MOTOR_LF_PWM, MOTOR_LF_DIR, motor_output.lf);
         Motor_Set_Output(MOTOR_RF_PWM, MOTOR_RF_DIR, motor_output.rf);
         Motor_Set_Output(MOTOR_LB_PWM, MOTOR_LB_DIR, motor_output.lb);

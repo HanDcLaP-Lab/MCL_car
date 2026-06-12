@@ -71,9 +71,9 @@ int main(void)
     while (imu_car_rc_data.is_calibrated == 0) {
         Parse_Board_Uart_Data();
         seekfree_assistant_data_analysis();
-        system_delay_ms(1); 
+        system_delay_ms(1);
     }
-    Mecanum_Unlock();
+    // 底盘解锁由 1ms ISR 在 IMU 校准完成时自动处理 (Chassis_Unblock(DISARM_UNCALIBRATED))
 
     //test_program_1();
     // 此处编写用户代码 例如外设初始化代码等
@@ -92,13 +92,11 @@ int main(void)
 
         if (board_rx_complete_flag) {
             board_rx_complete_flag = 0;
-            
-            // 【核心修复：断连恢复】如果之前处于失联保护状态，现在重新连上了，必须恢复动力！
-            if (drone_timeout_cnt >= 1000) {
-                EN = 1;             // 恢复 PID 输出使能
-                Mecanum_Unlock();   // 恢复底层控制锁
-            }
-            
+
+            // 收到无人机数据：仅清除通讯丢失这一位。若人工急停(DISARM_MANUAL)仍置位，
+            // 小车保持停车，不会因重连被自动唤醒。
+            Chassis_Unblock(DISARM_COMM_LOST);
+
             drone_timeout_cnt = 0; // 成功收到无人机数据，喂狗清零
 
             // [P1] 已删除无人机对小车的 car_en(uart_data[6]) 启停控制：小车不再消费该字段
@@ -106,13 +104,9 @@ int main(void)
             Visual_Control_Loop();
         } else {
             drone_timeout_cnt++;
-            // 主循环中有 system_delay_ms(1)，因此每次自增大约是 1ms 
-            if (drone_timeout_cnt > 1000) { // 超过 300ms 没收到通讯
-                
-                // 【核心修改：直接底层停车】不需要再调用视觉环了
-                //EN = 0;               // 1. 切断 PID 最终输出
-                Mecanum_Stop();       // 2. 清空目标速度、清空 PID 积分、锁定底盘 PWM
-                
+            // 主循环中有 system_delay_ms(1)，因此每次自增大约是 1ms
+            if (drone_timeout_cnt > 1000) { // 超过 1000ms 没收到通讯
+                Chassis_Block(DISARM_COMM_LOST); // 置通讯丢失位 → 停车清理 (幂等)
                 drone_timeout_cnt = 1000; // 卡住计数器防止溢出
             }
         }
@@ -170,12 +164,10 @@ void Wireless_Update(uint8_t ch, float val) {
             break;
         case 8:
             if(val == 1){
-              Mecanum_Stop();
+              Chassis_Block(DISARM_MANUAL);   // 人工急停
             }
             if(val== 0){
-                Mecanum_Unlock();
-                //test_program_1();
-                
+                Chassis_Unblock(DISARM_MANUAL); // 解除人工急停
                 seekfree_assistant_data_analysis();
 
                 for (int i = 0; i < SEEKFREE_ASSISTANT_SET_PARAMETR_COUNT; i++) {
