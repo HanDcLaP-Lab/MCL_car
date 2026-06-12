@@ -19,14 +19,17 @@
 ## 关键常量定义 (mecnum.h)
 
 ```c
-CAR_L = 0.10f          // 前后轮轴距一半 (m)
-CAR_W = 0.09f          // 左右轮距一半 (m)
-WHEEL_RADIUS = 0.028f  // 轮子半径 (m)
-PWM_MAX_M = 7000.0f    // PWM 最大占空比 (上限10000)
-CONTROL_DT = 0.001f    // 控制周期 1ms
-VISUAL_DT = 0.020f     // 视觉周期 20ms
-MAX_ACCEL_X/Y/W        // 加速度限制
-COAST_CNT = 20         // 目标丢失滑行帧数
+CAR_L = 0.10f             // 前后轮轴距一半 (m)
+CAR_W = 0.09f             // 左右轮距一半 (m)
+WHEEL_RADIUS = 0.028f     // 轮子半径 (m)
+PWM_MAX_M = 7000.0f       // PWM 最大占空比 (上限10000)
+CONTROL_DT = 0.001f       // 控制周期 1ms
+VISUAL_DT = 0.020f        // 视觉周期 20ms
+MAX_ACCEL_X/Y/W           // 加速度限制
+COAST_HOLD_MS = 200U      // 目标丢失后软滑行保持时间 (ms)
+LOCK_THRESHOLD = 7        // 锁定所需连续有效跟踪帧数
+MERGE_JUMP_THRESHOLD = 50 // 跳变检测阈值下限 (cm)
+MERGE_COAST_MS = 500U     // 锁定滑行最大持续时间 (ms)
 ```
 
 ## 控制架构 (mecnum.c)

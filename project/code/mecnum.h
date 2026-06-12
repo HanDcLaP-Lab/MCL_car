@@ -37,20 +37,13 @@
 #define MOTOR_LB_DIR    P18_4               // 左后 DIR
 #define MOTOR_RB_DIR    P06_3               // 右后 DIR
 
-//记忆功能
-// 记忆与视觉边界功能
-#define COAST_CNT      20        // 保留给边缘防闪烁/历史逻辑使用
-#define COAST_HOLD_MS  200U      // 目标丢失后滑行保持时间 (ms)，远处及未锁定近处使用
-#define EDGE_CNT  30
-#define COAST_DECAY    1.0f   // 速度衰减系数 (每次循环衰减)
-#define LOCK_THRESHOLD 7        // 锁定所需连续有效跟踪帧数
-//#define EDGE_X         50.0f    // 前后方向边缘视野界限 (cm)
-#define EDGE_Y         300.0f    // 左右方向边缘视野界限 (cm)
+// 记忆/滑行参数
+#define COAST_HOLD_MS  200U      // 目标丢失后软滑行保持时间 (ms)
+#define LOCK_THRESHOLD 7         // 锁定所需连续有效跟踪帧数
 
-// 信标合并滑行参数
-#define MERGE_DIST_THRESHOLD    28.0f   // 触发合并滑行的车-信标距离上限 (cm)
-#define MERGE_JUMP_THRESHOLD    50.0f   // target 坐标跳变检测阈值 (cm)
-#define MERGE_COAST_MS          500U    // 合并/锁定滑行最大持续时间 (ms)，原 25 帧@50Hz=0.5s
+// 信标跳变检测
+#define MERGE_JUMP_THRESHOLD    50.0f   // 跳变检测阈值下限 (cm)，实际阈值=prev_car_dist*0.4 钳位[50,200]
+#define MERGE_COAST_MS          500U    // 锁定滑行最大持续时间 (ms)
 
 extern volatile int EN;
 extern float f_t;

@@ -249,51 +249,85 @@ void Visual_Control_Loop(void) {
         // 状态 3：双目标锁定 (正常追踪)
         // ==========================================
         if (locked_state == 3) {
-            float dist = 0.0f, angle = 0.0f;
-            Image_Solve(imu_car_rc_data.yaw, &dist, &angle);
+            // 跳变滑行到期标记：到期时跳过跳变检测，直接接受新目标位置，打破死循环
+            uint8_t merge_expired = (merge_coast_end_time > 0 && sys_time_ms >= merge_coast_end_time);
+            uint8_t in_merge = (merge_coast_end_time > 0 && sys_time_ms < merge_coast_end_time);
 
-            // 跳变检测：无论远近，坐标突变时触发合并滑行，防止 coast 恢复后追错信标震荡
-            float car_target_dist = uart_data[7];
-            if (has_prev_target) {
+            if (in_merge) {
+                // 滑行期间：检查新目标是否已回到原信标附近，若回归则退出滑行恢复追踪
                 float dx = uart_data[2] - prev_target_x;
                 float dy = uart_data[3] - prev_target_y;
-                float jump = sqrtf(dx * dx + dy * dy);
-                float jump_thr = (prev_car_dist < MERGE_DIST_THRESHOLD) ? MERGE_JUMP_THRESHOLD : (MERGE_JUMP_THRESHOLD * 3.0f);
-                if (jump > jump_thr) {
-                    merge_coast_end_time = sys_time_ms + 400;
+                float dist_prev = sqrtf(dx * dx + dy * dy);
+                float jump_thr = prev_car_dist * 0.4f;
+                if (jump_thr < MERGE_JUMP_THRESHOLD) jump_thr = MERGE_JUMP_THRESHOLD;
+                if (jump_thr > 200.0f) jump_thr = 200.0f;
+
+                if (dist_prev <= jump_thr) {
+                    // 目标回到原信标附近：退出滑行，恢复追踪
+                    merge_coast_end_time = 0;
+                    in_merge = 0;
+                } else {
+                    // 仍是远处信标：维持原方向滑行，prev 不更新，死咬原始信标
+                    Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+                    dash_end_time = 0;
+                    visual_coast_end_time = 0;
+                    if (valid_track_cnt < 1000) valid_track_cnt++;
+                    is_edge = (uart_data[7] > 200.0f);
                 }
             }
-            prev_target_x = uart_data[2];
-            prev_target_y = uart_data[3];
-            prev_car_dist = car_target_dist;
-            has_prev_target = 1;
 
-            if (merge_coast_end_time > 0 && sys_time_ms < merge_coast_end_time) {
-                Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f); // 在此期间保持上一次的速度
-            } else {
+            if (!in_merge) {
                 merge_coast_end_time = 0;
-                ang_out = angle;
-                dist_out = dist;
 
-                float current_speed = TARGET_SPEED;
-                // if (dist < 20.0f) current_speed = 0.35f;
+                float dist = 0.0f, angle = 0.0f;
+                Image_Solve(imu_car_rc_data.yaw, &dist, &angle);
 
-                float angle_rad = angle * ((float)M_PI / 180.0f);
-                float target_speed_x = current_speed * cosf(angle_rad);
-                float target_speed_y = current_speed * sinf(angle_rad);
+                float car_target_dist = uart_data[7];
+                uint8_t jump_detected = 0;
 
-                Mecanum_Set_Velocity(target_speed_x, target_speed_y, 0.0f);
+                // merge_coast 到期时跳过跳变检测：直接接受当前信标为新目标
+                if (has_prev_target && !merge_expired) {
+                    float dx = uart_data[2] - prev_target_x;
+                    float dy = uart_data[3] - prev_target_y;
+                    float jump = sqrtf(dx * dx + dy * dy);
+                    float jump_thr = prev_car_dist * 0.4f;
+                    if (jump_thr < MERGE_JUMP_THRESHOLD) jump_thr = MERGE_JUMP_THRESHOLD;
+                    if (jump_thr > 200.0f) jump_thr = 200.0f;
+                    if (jump > jump_thr) {
+                        jump_detected = 1;
+                        merge_coast_end_time = sys_time_ms + 400;
+                    }
+                }
 
-                visual_last_vx = target_speed_x;
-                visual_last_vy = target_speed_y;
+                if (jump_detected) {
+                    Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+                } else {
+                    // 无跳变（含 merge_coast 到期接受新目标）：正常追踪并更新参考坐标
+                    ang_out = angle;
+                    dist_out = dist;
+
+                    float current_speed = TARGET_SPEED;
+
+                    float angle_rad = angle * ((float)M_PI / 180.0f);
+                    float target_speed_x = current_speed * cosf(angle_rad);
+                    float target_speed_y = current_speed * sinf(angle_rad);
+
+                    Mecanum_Set_Velocity(target_speed_x, target_speed_y, 0.0f);
+
+                    visual_last_vx = target_speed_x;
+                    visual_last_vy = target_speed_y;
+
+                    prev_target_x = uart_data[2];
+                    prev_target_y = uart_data[3];
+                    prev_car_dist = car_target_dist;
+                    has_prev_target = 1;
+                }
+
+                dash_end_time = 0;
+                visual_coast_end_time = 0;
+                if (valid_track_cnt < 1000) valid_track_cnt++;
+                is_edge = (uart_data[7] > 200.0f);
             }
-
-            dash_end_time = 0;
-            visual_coast_end_time = 0;
-            if (valid_track_cnt < 1000) valid_track_cnt++; // 累积有效帧
-
-            // 判断小车与信标之间的相对距离是否超过 200cm
-            is_edge = (uart_data[7] > 200.0f);
         }
         // ==========================================
         // 状态 4：发生融合，进入盲冲/滑行判断
@@ -363,7 +397,7 @@ void Visual_Control_Loop(void) {
                     dash_end_time = sys_time_ms + coast_ms;
                     Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                 } else if (dash_end_time == 0) {
-                    // 冷却期内：降级为软滑行，避免死循环空 dash
+                    // 冷却期内：暂停等待，避免死循环空 dash
                     if (visual_coast_end_time == 0) {
                         visual_coast_end_time = sys_time_ms + COAST_HOLD_MS;
                     }
