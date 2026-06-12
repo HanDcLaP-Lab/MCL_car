@@ -100,16 +100,8 @@ int main(void)
             }
             
             drone_timeout_cnt = 0; // 成功收到无人机数据，喂狗清零
-            static float last_en = 1.0f;
-            
 
-            // [修复] 急停判断移入此处：仅在收到有效数据后执行，避免启动时 uart_data[6] 全零误触发
-            if(uart_data[6] < 0.5f) {
-                Mecanum_Stop(); // [6] car_en — 急停使能标志 (0=急停, 1=正常)
-            } else if(last_en < 0.5f) {
-                Mecanum_Unlock();
-            }
-            last_en = uart_data[6];
+            // [P1] 已删除无人机对小车的 car_en(uart_data[6]) 启停控制：小车不再消费该字段
 
             Visual_Control_Loop();
         } else {
