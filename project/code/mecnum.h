@@ -40,16 +40,17 @@
 //记忆功能
 // 记忆与视觉边界功能
 #define COAST_CNT      20        // 保留给边缘防闪烁/历史逻辑使用
-#define COAST_HOLD_MS  500U      // 中心丢失后的绝对时间保持窗口 (ms)
+#define COAST_HOLD_MS  200U      // 目标丢失后滑行保持时间 (ms)，远处及未锁定近处使用
 #define EDGE_CNT  30
 #define COAST_DECAY    1.0f   // 速度衰减系数 (每次循环衰减)
+#define LOCK_THRESHOLD 7        // 锁定所需连续有效跟踪帧数
 //#define EDGE_X         50.0f    // 前后方向边缘视野界限 (cm)
 #define EDGE_Y         300.0f    // 左右方向边缘视野界限 (cm)
 
 // 信标合并滑行参数
 #define MERGE_DIST_THRESHOLD    28.0f   // 触发合并滑行的车-信标距离上限 (cm)
 #define MERGE_JUMP_THRESHOLD    50.0f   // target 坐标跳变检测阈值 (cm)
-#define MERGE_COAST_FRAMES      25      // 合并滑行持续帧数 (50Hz 下 25 帧 = 0.5s)
+#define MERGE_COAST_MS          500U    // 合并/锁定滑行最大持续时间 (ms)，原 25 帧@50Hz=0.5s
 
 extern volatile int EN;
 extern float f_t;

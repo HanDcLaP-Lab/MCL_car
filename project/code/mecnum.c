@@ -136,8 +136,7 @@ void Mecanum_Init(void) {
 // --- [重构] 抽离核心状态为全局，以便底层定时器与急停函数能强制干预 ---
 volatile float visual_last_vx = 0.0f;
 volatile float visual_last_vy = 0.0f;
-volatile uint32_t edge_coast_end_time = 0;    // 替代原 lost_cnt 的绝对物理计时器
-volatile uint32_t visual_coast_end_time = 0;  // 提取原 coast_end_time
+volatile uint32_t visual_coast_end_time = 0;  // 目标丢失软滑行绝对物理计时器
 
 extern volatile uint32_t dash_end_time;
 extern volatile uint32_t rush_cooldown_end_time;
@@ -147,7 +146,6 @@ void Visual_State_Reset(void) {
     rush_cooldown_end_time = 0;
     visual_last_vx = 0.0f;
     visual_last_vy = 0.0f;
-    edge_coast_end_time = 0;
     visual_coast_end_time = 0;
 }
 
@@ -241,9 +239,8 @@ void Visual_Control_Loop(void) {
         uint8_t locked_state = (uint8_t)uart_data[5]; 
         rush_sign = 0;
 
-        // [隐患修复] 一旦丢失双目标锁定（进入单目标丢失、全丢、或融合盲冲），
-        // 必须立刻清空“上一个目标的记忆”。防止在远处重新点亮信标时，因坐标突变引发漫长的防抖滑行。
-        if (locked_state != 3) {
+        if (locked_state == 0) {
+            // 仅在全丢时彻底清空历史跟踪记忆；coast 期间保留供跳变检测
             has_prev_target = 0;
             merge_coast_end_time = 0;
         }
@@ -255,13 +252,15 @@ void Visual_Control_Loop(void) {
             float dist = 0.0f, angle = 0.0f;
             Image_Solve(imu_car_rc_data.yaw, &dist, &angle);
 
-            // 跳变检测：距离近 + target 坐标突变 → 用旧方向滑行
+            // 跳变检测：无论远近，坐标突变时触发合并滑行，防止 coast 恢复后追错信标震荡
             float car_target_dist = uart_data[7];
-            if (has_prev_target && prev_car_dist < MERGE_DIST_THRESHOLD) {
+            if (has_prev_target) {
                 float dx = uart_data[2] - prev_target_x;
                 float dy = uart_data[3] - prev_target_y;
-                if (sqrtf(dx * dx + dy * dy) > MERGE_JUMP_THRESHOLD) {
-                    merge_coast_end_time = sys_time_ms + 400; // 绝对物理过滤 400 毫秒跳变
+                float jump = sqrtf(dx * dx + dy * dy);
+                float jump_thr = (prev_car_dist < MERGE_DIST_THRESHOLD) ? MERGE_JUMP_THRESHOLD : (MERGE_JUMP_THRESHOLD * 3.0f);
+                if (jump > jump_thr) {
+                    merge_coast_end_time = sys_time_ms + 400;
                 }
             }
             prev_target_x = uart_data[2];
@@ -277,7 +276,7 @@ void Visual_Control_Loop(void) {
                 dist_out = dist;
 
                 float current_speed = TARGET_SPEED;
-                // if (dist < 20.0f) current_speed = 0.35f; 
+                // if (dist < 20.0f) current_speed = 0.35f;
 
                 float angle_rad = angle * ((float)M_PI / 180.0f);
                 float target_speed_x = current_speed * cosf(angle_rad);
@@ -289,97 +288,104 @@ void Visual_Control_Loop(void) {
                 visual_last_vy = target_speed_y;
             }
 
-            edge_coast_end_time = 0;
             dash_end_time = 0;
             visual_coast_end_time = 0;
             if (valid_track_cnt < 1000) valid_track_cnt++; // 累积有效帧
-            
+
             // 判断小车与信标之间的相对距离是否超过 200cm
             is_edge = (uart_data[7] > 200.0f);
-        } 
+        }
         // ==========================================
-        // [新增] 状态 4：发生融合，进入盲冲/滑行判断
+        // 状态 4：发生融合，进入盲冲/滑行判断
         // ==========================================
         else if (locked_state == 4) {
             if (!is_edge) {
-                visual_coast_end_time = 0;
                 uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
                 // 在中心丢失，极大可能是近距离融合，执行硬实时绝对精确盲冲 (加入1秒防重入冷却)
                 if (dash_end_time == 0 && valid_track_cnt > 0 && !is_cooldown) {
+                    visual_coast_end_time = 0;
                     float speed_sq = visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy;
                     float speed = sqrtf(speed_sq);
                     if (speed < 0.1f) speed = 0.1f; // 防除零
-                    
+
                     // 物理绝对时间换算: 时间(s) = 距离(m) / 速度(m/s)
                     float duration_sec = (prev_car_dist / 100.0f) / speed;
                     int32_t duration_ms = (int32_t)(duration_sec * 1000.0f) - 150; // 提前刹车，避免冲过信标
-                    
-                    // [隐患修复4]: 限制盲冲最高物理时间为 800 毫秒，防止算出天文数字失控
+
                     if (duration_ms > 600) duration_ms = 600;
                     if (duration_ms < 100) duration_ms = 100;
-                    // 挂载绝对硬实时物理定时器
                     dash_end_time = sys_time_ms + (uint32_t)duration_ms;
-                    
-                    // 第一帧立马执行
+
                     Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                     rush_sign = 1;
-                } else if (dash_end_time == 0) {
-                    // [指令真空填补]: 突兀的跳变或者不合法的融合（如冷却期内或未经历状态3）
-                    // 绝不信任该孤立噪点，立刻停车保平安，并清空可能越界的累积
-                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-                    valid_track_cnt = 0;
-                }
-            } else {
-                visual_coast_end_time = 0;
-                // 在边缘误判融合，按边缘防闪烁逻辑处理
-                if (valid_track_cnt > 10) {
-                    if (edge_coast_end_time == 0) edge_coast_end_time = sys_time_ms + 250;
-                    if (sys_time_ms < edge_coast_end_time) {
-                        visual_last_vx *= COAST_DECAY; 
-                        visual_last_vy *= COAST_DECAY;
+                } else {
+                    // 冷却期内或未经历状态3：不盲目停车，降级为软滑行
+                    if (visual_coast_end_time == 0) {
+                        visual_coast_end_time = sys_time_ms + COAST_HOLD_MS;
+                    }
+                    if (sys_time_ms < visual_coast_end_time) {
                         Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                     } else {
                         Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
                         valid_track_cnt = 0;
+                        visual_coast_end_time = 0;
                     }
-                } else {
-                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-                    valid_track_cnt = 0;
-                }
-            }
-        }
-        // ==========================================
-        // 状态 2 或 1：一方丢失 (应用边缘防闪烁过滤)
-        // ==========================================
-        else if (locked_state == 2 || locked_state == 1) {
-            if (is_edge) {
-                visual_coast_end_time = 0;
-                // 边缘丢失防闪烁: 统一使用物理计时器 250ms 滑行
-                if (valid_track_cnt > 10) {
-                    if (edge_coast_end_time == 0) edge_coast_end_time = sys_time_ms + 250;
-                    if (sys_time_ms < edge_coast_end_time) {
-                        visual_last_vx *= COAST_DECAY; 
-                        visual_last_vy *= COAST_DECAY;
-                        Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
-                    } else {
-                        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-                        valid_track_cnt = 0;
-                    }
-                } else {
-                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-                    valid_track_cnt = 0;
                 }
             } else {
-                // 中心常规丢失，按硬件毫秒计时保持速度 100ms
+                // 远处误判融合，沿用软滑行
                 if (visual_coast_end_time == 0) {
                     visual_coast_end_time = sys_time_ms + COAST_HOLD_MS;
                 }
                 if (sys_time_ms < visual_coast_end_time) {
-                    Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f); 
+                    Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                 } else {
-                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); 
+                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
                     valid_track_cnt = 0;
-                    edge_coast_end_time = 0;
+                    visual_coast_end_time = 0;
+                }
+            }
+        }
+        // ==========================================
+        // 状态 2 或 1：一方丢失
+        // ==========================================
+        else if (locked_state == 2 || locked_state == 1) {
+
+            if (valid_track_cnt > LOCK_THRESHOLD) {
+                // 已锁定：触发不可中断盲冲，维持原方向直到 dash 到期
+                visual_coast_end_time = 0;
+                uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
+                if (dash_end_time == 0 && !is_cooldown) {
+                    float speed = sqrtf(visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy);
+                    if (speed < 0.1f) speed = 0.1f;
+                    uint32_t coast_ms = (uint32_t)(prev_car_dist / 100.0f / speed * 1000.0f);
+                    if (coast_ms < COAST_HOLD_MS) coast_ms = COAST_HOLD_MS;
+                    if (coast_ms > MERGE_COAST_MS) coast_ms = MERGE_COAST_MS;
+                    dash_end_time = sys_time_ms + coast_ms;
+                    Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+                } else if (dash_end_time == 0) {
+                    // 冷却期内：降级为软滑行，避免死循环空 dash
+                    if (visual_coast_end_time == 0) {
+                        visual_coast_end_time = sys_time_ms + COAST_HOLD_MS;
+                    }
+                    if (sys_time_ms < visual_coast_end_time) {
+                        Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+                    } else {
+                        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+                        valid_track_cnt = 0;
+                        visual_coast_end_time = 0;
+                    }
+                }
+                // 不清 valid_track_cnt：dash 到期后供状态4续用，防止多点亮场景死停
+            } else {
+                // 未锁定：标准 COAST_HOLD_MS 滑行，可被新坐标中断
+                if (visual_coast_end_time == 0) {
+                    visual_coast_end_time = sys_time_ms + COAST_HOLD_MS;
+                }
+                if (sys_time_ms < visual_coast_end_time) {
+                    Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+                } else {
+                    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+                    valid_track_cnt = 0;
                     visual_coast_end_time = 0;
                 }
             }
@@ -388,8 +394,7 @@ void Visual_Control_Loop(void) {
         // 状态 0：全丢
         // ==========================================
         else {
-            Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f); 
-            edge_coast_end_time = 0; 
+            Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
             valid_track_cnt = 0;
             dash_end_time = 0;
             visual_coast_end_time = 0;
@@ -430,13 +435,6 @@ void Mecanum_Control_Loop(void) {
         target_vel.wz = 0.0f;
         Visual_State_Reset();
     }
-    else if (edge_coast_end_time > 0 && sys_time_ms >= edge_coast_end_time) {
-        target_vel.vx = 0.0f;
-        target_vel.vy = 0.0f;
-        target_vel.wz = 0.0f;
-        Visual_State_Reset();
-    }
-
     // ==========================================================
     // 【核心一】只对“用户目标指令”进行斜坡平滑 (防起步打滑)
     // 根据设定的最大加速度，限制每 1ms (CONTROL_DT) 的速度变化量
