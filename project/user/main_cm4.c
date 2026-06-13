@@ -63,7 +63,7 @@ int main(void)
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     
-    pit_ms_init(PIT_CH1, 100);
+    pit_ms_init(PIT_CH1, 25);
     //pit_ms_init(PIT_CH2, 20); // 视觉控制周期 20ms
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);

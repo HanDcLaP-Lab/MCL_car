@@ -28,9 +28,13 @@ VISUAL_DT = 0.020f        // 视觉周期 20ms
 MAX_ACCEL_X/Y/W           // 加速度限制
 COAST_HOLD_MS = 200U      // 目标丢失后软滑行保持时间 (ms)
 LOCK_THRESHOLD = 7        // 锁定所需连续有效跟踪帧数
-MERGE_JUMP_THRESHOLD = 50 // 跳变检测阈值下限 (cm)
+JUMP_THRESHOLD_MIN = 50   // 跳变检测阈值下限 (cm)
+JUMP_THRESHOLD_MAX = 200  // 跳变检测阈值上限 (cm)
+JUMP_SCALE_COEF = 0.4     // 跳变阈值缩放系数 (× car_dist)
+MERGE_COAST_MS = 400U     // 信标跳变滑行持续时间 (ms)
 DASH_MS_MIN = 200U        // 盲冲时长下限 (ms)
 DASH_MS_MAX = 500U        // 盲冲时长上限 (ms)
+EDGE_DIST_CM = 200.0      // 画面边缘距离分界 (cm)
 ```
 
 ## 控制架构 (mecnum.c)

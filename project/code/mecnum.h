@@ -42,7 +42,13 @@
 #define LOCK_THRESHOLD 7         // 锁定所需连续有效跟踪帧数
 
 // 信标跳变检测
-#define MERGE_JUMP_THRESHOLD    50.0f   // 跳变检测阈值下限 (cm)，实际阈值=prev_car_dist*0.4 钳位[50,200]
+#define JUMP_THRESHOLD_MIN      50.0f   // 跳变检测阈值下限 (cm)
+#define JUMP_THRESHOLD_MAX      200.0f  // 跳变检测阈值上限 (cm)
+#define JUMP_SCALE_COEF         0.4f    // 跳变阈值缩放系数 (× car_dist)
+#define MERGE_COAST_MS          400U    // 信标跳变滑行持续时间 (ms)
+
+// 边缘判定
+#define EDGE_DIST_CM            200.0f  // 信标距画面中心距离分界 (cm)，>此值视为边缘
 #define DASH_MS_MIN             200U    // 盲冲时长下限 (ms)
 #define DASH_MS_MAX             500U    // 盲冲时长上限 (ms)
 

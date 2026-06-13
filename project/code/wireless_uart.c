@@ -124,6 +124,31 @@ void wireless_uart_output_encoder(void){
     wireless_uart_send_string("\n");
 }
 
+void wireless_uart_output_coast(void) {
+    extern volatile uint32_t sys_time_ms;
+    extern volatile uint32_t dash_end_time;
+    extern volatile uint32_t visual_coast_end_time;
+    extern volatile uint32_t merge_coast_end_time;
+
+    uint32_t now = sys_time_ms;
+
+    if (dash_end_time > 0 && now < dash_end_time) {
+        wireless_uart_send_string("DASH,");
+        wireless_uart_send_int((int32_t)(dash_end_time - now));
+        wireless_uart_send_string("\r\n");
+    }
+    if (visual_coast_end_time > 0 && now < visual_coast_end_time) {
+        wireless_uart_send_string("VIS,");
+        wireless_uart_send_int((int32_t)(visual_coast_end_time - now));
+        wireless_uart_send_string("\r\n");
+    }
+    if (merge_coast_end_time > 0 && now < merge_coast_end_time) {
+        wireless_uart_send_string("MERGE,");
+        wireless_uart_send_int((int32_t)(merge_coast_end_time - now));
+        wireless_uart_send_string("\r\n");
+    }
+}
+
 void print_imu(void){
     printf("%f,%f,%f,%f\n",imu_car_rc_data.pitch , imu_car_rc_data.roll , imu_car_rc_data.yaw , imu_car_rc_data.yaw_total);
 }
