@@ -299,7 +299,11 @@ void Visual_Control_Loop(void) {
                     float jump_thr = prev_car_dist * 0.4f;
                     if (jump_thr < MERGE_JUMP_THRESHOLD) jump_thr = MERGE_JUMP_THRESHOLD;
                     if (jump_thr > 200.0f) jump_thr = 200.0f;
-                    if (jump > jump_thr) {
+                    // [修复] merge_coast 靠重放 visual_last 速度惯性滑过跳变；若信标交接期间速度
+                    // 已被 dash/coast 到期的 Visual_State_Reset 清零，则"滑行"会退化为原地死停 400ms
+                    // (走一下→停一下→继续走)。无残余速度可滑时直接接受新信标，消除该卡顿。
+                    float coast_speed_sq = visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy;
+                    if (jump > jump_thr && coast_speed_sq > 0.01f) {
                         jump_detected = 1;
                         merge_coast_end_time = sys_time_ms + 400;
                     }
