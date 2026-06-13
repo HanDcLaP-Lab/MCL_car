@@ -402,8 +402,8 @@ void Visual_Control_Loop(void) {
                     float speed = sqrtf(visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy);
                     if (speed < 0.1f) speed = 0.1f;
                     uint32_t coast_ms = (uint32_t)(prev_car_dist / 100.0f / speed * 1000.0f);
-                    if (coast_ms < COAST_HOLD_MS) coast_ms = COAST_HOLD_MS;
-                    if (coast_ms > MERGE_COAST_MS) coast_ms = MERGE_COAST_MS;
+                    if (coast_ms < DASH_MS_MIN) coast_ms = DASH_MS_MIN;
+                    if (coast_ms > DASH_MS_MAX) coast_ms = DASH_MS_MAX;
                     dash_end_time = sys_time_ms + coast_ms;
                     Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                 } else if (dash_end_time == 0) {

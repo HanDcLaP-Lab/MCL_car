@@ -38,12 +38,13 @@
 #define MOTOR_RB_DIR    P06_3               // 右后 DIR
 
 // 记忆/滑行参数
-#define COAST_HOLD_MS  200U      // 目标丢失后软滑行保持时间 (ms)
+#define COAST_HOLD_MS  300U      // 目标丢失后软滑行保持时间 (ms)
 #define LOCK_THRESHOLD 7         // 锁定所需连续有效跟踪帧数
 
 // 信标跳变检测
 #define MERGE_JUMP_THRESHOLD    50.0f   // 跳变检测阈值下限 (cm)，实际阈值=prev_car_dist*0.4 钳位[50,200]
-#define MERGE_COAST_MS          500U    // 锁定滑行最大持续时间 (ms)
+#define DASH_MS_MIN             200U    // 盲冲时长下限 (ms)
+#define DASH_MS_MAX             500U    // 盲冲时长上限 (ms)
 
 // ================== 底盘使能状态 (解除武装原因位掩码) ==================
 // 小车仅在 disarm_flags == 0 (所有原因都清零) 时才允许输出动力。
