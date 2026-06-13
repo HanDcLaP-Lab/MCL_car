@@ -136,6 +136,7 @@ volatile float visual_last_vy = 0.0f;
 volatile uint32_t visual_coast_end_time = 0;  // 目标丢失软滑行绝对物理计时器
 volatile uint32_t merge_coast_end_time = 0; // 信标跳变滑行物理计时器
 volatile uint8_t  merge_coast_expired = 0;  // merge_coast ISR 到期标志，防竞态清零后跳变检测死循环
+volatile uint8_t  visual_coast_expired = 0; // visual_coast ISR 到期标志，防竞态清零后软滑行无限循环
 
 extern volatile uint32_t dash_end_time;
 extern volatile uint32_t rush_cooldown_end_time;
@@ -149,6 +150,7 @@ void Visual_State_Reset(void) {
     visual_coast_end_time = 0;
     merge_coast_end_time = 0;
     merge_coast_expired = 0;
+    visual_coast_expired = 0;
     // 注意：不在此函数内清零 rush_cooldown_end_time。
     // rush_cooldown 是 dash 到期时由 1ms ISR 设置的 1 秒冷却期，
     // 其目的是防止 0 速度无限重入。若被一并清零，冷却形同虚设，
@@ -231,30 +233,40 @@ static float Compute_Jump_Threshold(float car_dist) {
 // prev_x, prev_y: 参考信标坐标（若检测到近距目标则更新）
 // prev_dist: 前一帧车-信标距离
 // 返回 1 表示检测到近距目标已恢复并退出 coast
-static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float *prev_y, float prev_dist) {
+// target_valid: 本帧信标坐标是否有效。state 1（仅小车可见）时 target_valid=0，
+// uart_data[2]/[3] 是冻结的旧坐标，不可用于近距恢复检测，否则会误判"目标重现"→无限循环。
+static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float *prev_y, float prev_dist, uint8_t target_valid) {
+    // ISR 到期标志：若 ISR 已抢先处理到期的滑行（置位 visual_coast_expired
+    // 并清零 visual_coast_end_time），不再重启新滑行周期，避免死循环。
+    if (visual_coast_expired) {
+        visual_coast_expired = 0;
+        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+        return 0;
+    }
+
     if (visual_coast_end_time == 0) {
         visual_coast_end_time = sys_time_ms + COAST_HOLD_MS;
     }
     if (sys_time_ms < visual_coast_end_time) {
-        // Coast 活动期：检查目标是否回到原信标附近（非跳变），若是则提前退出
-        if (has_prev) {
+        // Coast 活动期：仅当本帧信标确实可见时才做近距恢复检测
+        if (has_prev && target_valid) {
             float dx = uart_data[2] - *prev_x;
             float dy = uart_data[3] - *prev_y;
             float dist_prev = sqrtf(dx * dx + dy * dy);
             if (dist_prev <= Compute_Jump_Threshold(prev_dist)) {
-                // 近距：非跳变，退出 coast 接受为原信标
                 visual_coast_end_time = 0;
+                visual_coast_expired = 0;
                 *prev_x = uart_data[2];
                 *prev_y = uart_data[3];
                 return 1;
             }
         }
-        // 无近距目标或发生跳变：保持滑行
+        // 无近距目标或信标不可见：保持滑行
         Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
         return 0;
     } else {
-        // Coast 到期仍未出现近距目标：接受当前信标（可能是远处另一个信标）
-        if (has_prev) {
+        // Coast 到期
+        if (has_prev && target_valid) {
             *prev_x = uart_data[2];
             *prev_y = uart_data[3];
         }
@@ -289,7 +301,24 @@ void Visual_Control_Loop(void) {
     static float prev_car_dist = 0.0f;
     //if(rush_sign) rush_sign = 0; 
     
+    static uint8_t zero_consecutive = 0;
+
     if (Chassis_Is_Armed()) {
+        // 连续两帧全丢（state 0）：信标确定熄灭，强制中断一切滑行/盲冲
+        if ((uint8_t)uart_data[5] == 0) {
+            if (++zero_consecutive >= 2) {
+                dash_end_time = 0;
+                dash_source = 0;
+                visual_coast_end_time = 0;
+                merge_coast_end_time = 0;
+                Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+                rush_sign = 0;
+                return;
+            }
+        } else {
+            zero_consecutive = 0;
+        }
+
         // [隐患修复3]: 绝对物理时钟接管系统。一旦盲冲启动，无视后续一切视觉状态强制执行，直到绝对物理时间到达。
         // 这彻底解决了无人机丢包、相机曝光导致单帧时长被放大所引发的冲刺距离失控问题。
         if (dash_end_time > 0) {
@@ -417,11 +446,11 @@ void Visual_Control_Loop(void) {
                     rush_sign = 1;
                 } else {
                     // 冷却期内或未经历状态3：软滑行（含近距恢复检测）
-                    Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist);
+                    Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist, 1);
                 }
             } else {
                 // 远处误判融合，软滑行（含近距恢复检测）
-                Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist);
+                Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist, 1);
             }
         }
         // ==========================================
@@ -447,12 +476,12 @@ void Visual_Control_Loop(void) {
                     Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                 } else if (dash_end_time == 0) {
                     // 冷却期内：软滑行（含近距恢复检测），避免死循环空 dash
-                    Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist);
+                    Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist, (locked_state == 2));
                 }
                 // 不清 valid_track_cnt：dash 到期后供状态4续用，防止多点亮场景死停
             } else {
                 // 未锁定：软滑行（含近距恢复检测）
-                Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist);
+                Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist, (locked_state == 2));
             }
         }
         // ==========================================
@@ -496,6 +525,8 @@ void Mecanum_Control_Loop(void) {
         target_vel.vy = 0.0f;
         target_vel.wz = 0.0f;
         Visual_State_Reset();
+        // 标志必须在 Visual_State_Reset() 之后设，否则会被其清零
+        visual_coast_expired = 1;
     }
     else if (merge_coast_end_time > 0 && sys_time_ms >= merge_coast_end_time) {
         // [修复] merge_coast 到期时仅停车，不调 Visual_State_Reset：保留 prev_target/has_prev_target
