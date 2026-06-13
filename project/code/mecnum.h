@@ -51,6 +51,7 @@
 #define EDGE_DIST_CM            200.0f  // 信标距画面中心距离分界 (cm)，>此值视为边缘
 #define DASH_MS_MIN             200U    // 盲冲时长下限 (ms)
 #define DASH_MS_MAX             500U    // 盲冲时长上限 (ms)
+#define DASH_CNT_THRESHOLD      5
 
 // ================== 底盘使能状态 (解除武装原因位掩码) ==================
 // 小车仅在 disarm_flags == 0 (所有原因都清零) 时才允许输出动力。

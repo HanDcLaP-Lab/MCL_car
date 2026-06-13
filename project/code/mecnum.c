@@ -135,16 +135,20 @@ volatile float visual_last_vx = 0.0f;
 volatile float visual_last_vy = 0.0f;
 volatile uint32_t visual_coast_end_time = 0;  // 目标丢失软滑行绝对物理计时器
 volatile uint32_t merge_coast_end_time = 0; // 信标跳变滑行物理计时器
+volatile uint8_t  merge_coast_expired = 0;  // merge_coast ISR 到期标志，防竞态清零后跳变检测死循环
 
 extern volatile uint32_t dash_end_time;
 extern volatile uint32_t rush_cooldown_end_time;
+extern volatile uint8_t dash_source;
 
 void Visual_State_Reset(void) {
     dash_end_time = 0;
+    dash_source = 0;
     visual_last_vx = 0.0f;
     visual_last_vy = 0.0f;
     visual_coast_end_time = 0;
     merge_coast_end_time = 0;
+    merge_coast_expired = 0;
     // 注意：不在此函数内清零 rush_cooldown_end_time。
     // rush_cooldown 是 dash 到期时由 1ms ISR 设置的 1 秒冷却期，
     // 其目的是防止 0 速度无限重入。若被一并清零，冷却形同虚设，
@@ -210,6 +214,7 @@ void Chassis_Unblock(uint8_t reason) {
 volatile uint32_t sys_time_ms = 0;
 volatile uint32_t dash_end_time = 0;          // [重构] 融合盲冲绝对结束物理时间
 volatile uint32_t rush_cooldown_end_time = 0; // [重构] 防重入冷却绝对结束时间
+volatile uint8_t  dash_source = 0;            // dash 触发来源: 1=状态4融合盲冲, 2=状态1/2单目标丢失盲冲
 
 // ================== 视觉滑行辅助函数 ==================
 
@@ -307,8 +312,11 @@ void Visual_Control_Loop(void) {
         // 状态 3：双目标锁定 (正常追踪)
         // ==========================================
         if (locked_state == 3) {
-            // 跳变滑行到期标记：到期时跳过跳变检测，直接接受新目标位置，打破死循环
-            uint8_t merge_expired = (merge_coast_end_time > 0 && sys_time_ms >= merge_coast_end_time);
+            // 跳变滑行到期标记：到期时跳过跳变检测，直接接受新目标位置，打破死循环。
+            // merge_coast_expired 由 1ms ISR 置位，解决 ISR 先于主循环清零 merge_coast_end_time
+            // 导致 merge_expired 永不为真的竞态。标志仅一帧有效，消费后即清零。
+            uint8_t merge_expired = merge_coast_expired || (merge_coast_end_time > 0 && sys_time_ms >= merge_coast_end_time);
+            merge_coast_expired = 0;
             uint8_t in_merge = (merge_coast_end_time > 0 && sys_time_ms < merge_coast_end_time);
 
             if (in_merge) {
@@ -390,7 +398,7 @@ void Visual_Control_Loop(void) {
             if (!is_edge) {
                 uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
                 // 在中心丢失，极大可能是近距离融合，执行硬实时绝对精确盲冲 (加入1秒防重入冷却)
-                if (dash_end_time == 0 && valid_track_cnt > 0 && !is_cooldown) {
+                if (dash_end_time == 0 && valid_track_cnt > DASH_CNT_THRESHOLD && !is_cooldown) {
                     visual_coast_end_time = 0;
                     float speed_sq = visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy;
                     float speed = sqrtf(speed_sq);
@@ -403,6 +411,7 @@ void Visual_Control_Loop(void) {
                     if (duration_ms > 600) duration_ms = 600;
                     if (duration_ms < 100) duration_ms = 100;
                     dash_end_time = sys_time_ms + (uint32_t)duration_ms;
+                    dash_source = 1;
 
                     Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                     rush_sign = 1;
@@ -434,6 +443,7 @@ void Visual_Control_Loop(void) {
                     if (coast_ms < DASH_MS_MIN) coast_ms = DASH_MS_MIN;
                     if (coast_ms > DASH_MS_MAX) coast_ms = DASH_MS_MAX;
                     dash_end_time = sys_time_ms + coast_ms;
+                    dash_source = 2;
                     Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                 } else if (dash_end_time == 0) {
                     // 冷却期内：软滑行（含近距恢复检测），避免死循环空 dash
@@ -493,6 +503,7 @@ void Mecanum_Control_Loop(void) {
         target_vel.vx = 0.0f;
         target_vel.vy = 0.0f;
         target_vel.wz = 0.0f;
+        merge_coast_expired = 1;    // 置位标志，防 Visual_Control_Loop 竞态重入跳变检测
         merge_coast_end_time = 0;
     }
     // ==========================================================
