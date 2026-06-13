@@ -38,5 +38,5 @@ void Image_Solve(float car_yaw, float *dist, float *angle) {
     dy_car = -dy_car; // Y轴取反适配小车坐标系
 
     // 4. 计算角度 (0度为车头, 90度为车右, 符合 atan2(y, x) 定义)
-    *angle = atan2f(dy_car, dx_car) * (180.0f / (float)M_PI);
+    *angle = atan2f(dy_car, dx_car) * (180.0f / (float)M_PI) + YAW_OFFSET;
 }

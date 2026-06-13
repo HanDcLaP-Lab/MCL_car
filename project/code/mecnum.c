@@ -23,7 +23,7 @@ float YAW_KP=0.16f, YAW_KI=0.0f, YAW_KD=0.01f, YAW_MAX_I=10.0f, YAW_OUT_MAX=1.6f
 float YAW_RATE_KP=1.5f, YAW_RATE_KI=0.0f, YAW_RATE_KD=0.0f, YAW_RATE_MAX_I=1.0f, YAW_RATE_OUT_MAX=1.5f;
 Target_t target_vel = {0};//目标运行情况
 Motor_Output_t motor_output = {0};
-float ang_out=0,dist_out=0;
+float dist_out=0;
 
 // 【新增】斜坡函数相关的平滑速度变量
 float smooth_vx = 0.0f;
@@ -313,7 +313,7 @@ void Visual_Control_Loop(void) {
                     Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                 } else {
                     // 无跳变（含 merge_coast 到期接受新目标）：正常追踪并更新参考坐标
-                    ang_out = angle;
+                    
                     dist_out = dist;
 
                     float current_speed = TARGET_SPEED;

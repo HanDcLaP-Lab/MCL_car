@@ -54,6 +54,8 @@
 #define DISARM_COMM_LOST     (1u << 1)   // 无人机通讯看门狗超时
 #define DISARM_MANUAL        (1u << 2)   // 无线通道8人工急停
 
+#define YAW_OFFSET 45.0f
+
 extern float f_t;
 extern int rush_sign;
 // ================== 结构体定义 ==================
