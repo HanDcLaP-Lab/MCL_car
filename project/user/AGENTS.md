@@ -44,7 +44,7 @@
 
 ```
 1. Parse_Board_Uart_Data()              // 解析无人机数据包
-2. 无人机急停判断 (uart_data[6] car_en)  // 当前不消费 (6.12d 起保持禁用)
+2. 无人机急停判断 (uart_data[6] car_en)  // 只维护 DISARM_DRONE_STOPPED，不覆盖人工急停/通讯看门狗
 3. 无人机通讯看门狗:
    - 收到数据 → 喂狗清零，Chassis_Unblock(DISARM_COMM_LOST)，跑 Visual_Control_Loop()
    - 超时1000ms → Chassis_Block(DISARM_COMM_LOST)，卡住计数器
@@ -90,4 +90,3 @@
    幂等: Block 同一位重复调用→直接返回 (杜绝 1ms 狂调清理)。
    关键安全路径: 人工急停(bit2) 期间断连(bit1) → 重连只清 bit1 → 仍 DISARMED → 必须 ch8=0 才跑。
 ```
-

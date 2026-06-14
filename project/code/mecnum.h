@@ -60,6 +60,7 @@
 #define DISARM_UNCALIBRATED  (1u << 0)   // IMU 未校准完成
 #define DISARM_COMM_LOST     (1u << 1)   // 无人机通讯看门狗超时
 #define DISARM_MANUAL        (1u << 2)   // 无线通道8人工急停
+#define DISARM_DRONE_STOPPED (1u << 3)   // 无人机下传 car_en=0
 
 #define YAW_OFFSET 45.0f
 

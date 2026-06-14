@@ -154,6 +154,29 @@ void wireless_uart_output_coast(void) {
     }
 }
 
+void wireless_uart_output_stop_debug(void) {
+    extern volatile uint32_t drone_timeout_debug;
+    extern volatile uint32_t board_rx_ok_debug;
+
+    uint8_t flags = Chassis_Get_Disarm_Flags();
+
+    wireless_uart_send_string("STOPDBG,f:");
+    wireless_uart_send_int((int32_t)flags);
+    wireless_uart_send_string(",arm:");
+    wireless_uart_send_int((int32_t)Chassis_Is_Armed());
+    wireless_uart_send_string(",ce:");
+    wireless_uart_send_float(uart_data[6]);
+    wireless_uart_send_string(",ls:");
+    wireless_uart_send_int((int32_t)((uint8_t)uart_data[5]));
+    wireless_uart_send_string(",cal:");
+    wireless_uart_send_int((int32_t)imu_car_rc_data.is_calibrated);
+    wireless_uart_send_string(",to:");
+    wireless_uart_send_int((int32_t)drone_timeout_debug);
+    wireless_uart_send_string(",rx:");
+    wireless_uart_send_int((int32_t)board_rx_ok_debug);
+    wireless_uart_send_string("\r\n");
+}
+
 void print_imu(void){
     printf("%f,%f,%f,%f\n",imu_car_rc_data.pitch , imu_car_rc_data.roll , imu_car_rc_data.yaw , imu_car_rc_data.yaw_total);
 }

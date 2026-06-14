@@ -46,6 +46,8 @@
 // **************************** 代码区域 ****************************
 extern volatile uint8_t board_rx_complete_flag;
 extern int32_t cnt;
+volatile uint32_t drone_timeout_debug = 0;
+volatile uint32_t board_rx_ok_debug = 0;
 //int mv_en = 0;
 void Wireless_Update(uint8_t ch, float val);
 int main(void)
@@ -92,14 +94,23 @@ int main(void)
 
         if (board_rx_complete_flag) {
             board_rx_complete_flag = 0;
+            board_rx_ok_debug++;
 
             // 收到无人机数据：仅清除通讯丢失这一位。若人工急停(DISARM_MANUAL)仍置位，
             // 小车保持停车，不会因重连被自动唤醒。
             Chassis_Unblock(DISARM_COMM_LOST);
 
             drone_timeout_cnt = 0; // 成功收到无人机数据，喂狗清零
+            drone_timeout_debug = drone_timeout_cnt;
 
-            // [P1] 已删除无人机对小车的 car_en(uart_data[6]) 启停控制：小车不再消费该字段
+            // 无人机下传 car_en: 0=飞机停止/锁定, 1=正常飞行。
+            // 只置/清 DISARM_DRONE_STOPPED，不覆盖人工急停或通信看门狗。
+            uint8_t drone_running = (uart_data[6] >= 0.5f);
+            if (drone_running) {
+                Chassis_Unblock(DISARM_DRONE_STOPPED);
+            } else {
+                Chassis_Block(DISARM_DRONE_STOPPED);
+            }
 
             Visual_Control_Loop();
         } else {
@@ -109,6 +120,7 @@ int main(void)
                 Chassis_Block(DISARM_COMM_LOST); // 置通讯丢失位 → 停车清理 (幂等)
                 drone_timeout_cnt = 1000; // 卡住计数器防止溢出
             }
+            drone_timeout_debug = drone_timeout_cnt;
         }
 
         seekfree_assistant_data_analysis();
