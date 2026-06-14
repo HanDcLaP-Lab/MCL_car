@@ -46,8 +46,12 @@
 // **************************** 代码区域 ****************************
 extern volatile uint8_t board_rx_complete_flag;
 extern int32_t cnt;
+extern volatile uint32_t sys_time_ms;
 volatile uint32_t drone_timeout_debug = 0;
 volatile uint32_t board_rx_ok_debug = 0;
+volatile uint32_t visual_loop_count_debug = 0;
+volatile uint32_t visual_loop_dt_debug = 0;
+volatile uint32_t visual_loop_max_dt_debug = 0;
 //int mv_en = 0;
 void Wireless_Update(uint8_t ch, float val);
 int main(void)
@@ -112,6 +116,16 @@ int main(void)
                 Chassis_Block(DISARM_DRONE_STOPPED);
             }
 
+            static uint32_t last_visual_time_ms = 0;
+            uint32_t now = sys_time_ms;
+            if (last_visual_time_ms != 0) {
+                visual_loop_dt_debug = now - last_visual_time_ms;
+                if (visual_loop_dt_debug > visual_loop_max_dt_debug) {
+                    visual_loop_max_dt_debug = visual_loop_dt_debug;
+                }
+            }
+            last_visual_time_ms = now;
+            visual_loop_count_debug++;
             Visual_Control_Loop();
         } else {
             drone_timeout_cnt++;

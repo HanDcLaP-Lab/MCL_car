@@ -17,5 +17,6 @@ void wireless_uart_output_encoder(void);
 void wireless_uart_output_coast(void);
 // 手动调试用：默认不调用，需要时在 PIT_CH1 等调试位置临时打开。
 void wireless_uart_output_stop_debug(void);
+void wireless_uart_output_comm_debug(void);
 void print_imu(void);
 #endif

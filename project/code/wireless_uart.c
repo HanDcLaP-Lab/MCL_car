@@ -177,6 +177,43 @@ void wireless_uart_output_stop_debug(void) {
     wireless_uart_send_string("\r\n");
 }
 
+void wireless_uart_output_comm_debug(void) {
+    extern volatile uint32_t drone_timeout_debug;
+    extern volatile uint32_t visual_loop_count_debug;
+    extern volatile uint32_t visual_loop_dt_debug;
+    extern volatile uint32_t visual_loop_max_dt_debug;
+
+    wireless_uart_send_string("COMMDBG,rx:");
+    wireless_uart_send_int((int32_t)board_rx_ok_count);
+    wireless_uart_send_string(",pdt:");
+    wireless_uart_send_int((int32_t)board_rx_last_dt_ms);
+    wireless_uart_send_string(",pmax:");
+    wireless_uart_send_int((int32_t)board_rx_max_dt_ms);
+    wireless_uart_send_string(",v:");
+    wireless_uart_send_int((int32_t)visual_loop_count_debug);
+    wireless_uart_send_string(",vdt:");
+    wireless_uart_send_int((int32_t)visual_loop_dt_debug);
+    wireless_uart_send_string(",vmax:");
+    wireless_uart_send_int((int32_t)visual_loop_max_dt_debug);
+    wireless_uart_send_string(",to:");
+    wireless_uart_send_int((int32_t)drone_timeout_debug);
+    wireless_uart_send_string(",fifo:");
+    wireless_uart_send_int((int32_t)fifo_used(&board_rx_fifo));
+    wireless_uart_send_string("/");
+    wireless_uart_send_int((int32_t)board_rx_fifo_max_used);
+    wireless_uart_send_string(",ck:");
+    wireless_uart_send_int((int32_t)board_rx_checksum_fail_count);
+    wireless_uart_send_string(",tail:");
+    wireless_uart_send_int((int32_t)board_rx_tail_fail_count);
+    wireless_uart_send_string(",inv:");
+    wireless_uart_send_int((int32_t)board_rx_invalid_count);
+    wireless_uart_send_string(",ce:");
+    wireless_uart_send_float(uart_data[6]);
+    wireless_uart_send_string(",ls:");
+    wireless_uart_send_int((int32_t)((uint8_t)uart_data[5]));
+    wireless_uart_send_string("\r\n");
+}
+
 void print_imu(void){
     printf("%f,%f,%f,%f\n",imu_car_rc_data.pitch , imu_car_rc_data.roll , imu_car_rc_data.yaw , imu_car_rc_data.yaw_total);
 }

@@ -23,6 +23,13 @@
 extern float uart_data[8]; 
 extern fifo_struct board_rx_fifo;
 extern uint8_t temp_rx_dat;
+extern volatile uint32_t board_rx_ok_count;
+extern volatile uint32_t board_rx_checksum_fail_count;
+extern volatile uint32_t board_rx_tail_fail_count;
+extern volatile uint32_t board_rx_invalid_count;
+extern volatile uint32_t board_rx_last_dt_ms;
+extern volatile uint32_t board_rx_max_dt_ms;
+extern volatile uint32_t board_rx_fifo_max_used;
 
 // ================= 函数声明 =================
 void Board_Comm_Init(void);               // 通讯初始化

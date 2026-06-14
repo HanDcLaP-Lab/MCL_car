@@ -9,6 +9,13 @@ uint8_t rx_buffer[512];
 volatile uint8_t board_rx_complete_flag = 0;
 fifo_struct board_rx_fifo;
 uint8_t temp_rx_dat;      
+volatile uint32_t board_rx_ok_count = 0;
+volatile uint32_t board_rx_checksum_fail_count = 0;
+volatile uint32_t board_rx_tail_fail_count = 0;
+volatile uint32_t board_rx_invalid_count = 0;
+volatile uint32_t board_rx_last_dt_ms = 0;
+volatile uint32_t board_rx_max_dt_ms = 0;
+volatile uint32_t board_rx_fifo_max_used = 0;
 
 // 接收状态机枚举
 typedef enum {
@@ -36,14 +43,20 @@ void Board_Comm_Init(void)
 
 static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
 {
+    extern volatile uint32_t sys_time_ms;
     static RxState state = STEP_HEADER1;
     static uint8_t data_idx = 0;
     static FloatPack temp_pack;
     static uint8_t cal_checksum = 0;
     static uint32_t rx_cnt = 0; // [新增] 接收包计数器
+    static uint32_t last_ok_time_ms = 0;
     
     uint8_t read_byte;
     uint32_t len;
+    uint32_t fifo_now = fifo_used(&board_rx_fifo);
+    if (fifo_now > board_rx_fifo_max_used) {
+        board_rx_fifo_max_used = fifo_now;
+    }
 
     while (fifo_used(&board_rx_fifo) > 0) 
     {
@@ -75,6 +88,7 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                 if (read_byte == cal_checksum) {
                     state = STEP_TAIL;                       
                 } else {
+                    board_rx_checksum_fail_count++;
                     state = STEP_HEADER1;                    
                     // 仅在调试模式下打印报错
                     if (debug_en) {
@@ -112,6 +126,15 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                         for (int i = 0; i < 8; i++) {
                             uart_data[i] = temp_pack.f_data[i];
                         }
+                        uint32_t now = sys_time_ms;
+                        if (last_ok_time_ms != 0) {
+                            board_rx_last_dt_ms = now - last_ok_time_ms;
+                            if (board_rx_last_dt_ms > board_rx_max_dt_ms) {
+                                board_rx_max_dt_ms = board_rx_last_dt_ms;
+                            }
+                        }
+                        last_ok_time_ms = now;
+                        board_rx_ok_count++;
                         board_rx_complete_flag = 1;
                         
                         // 仅在调试模式下打印成功信息
@@ -122,8 +145,11 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                                 //printf("RxCnt:%d [OK] X:%.2f Y:%.2f\r\n", rx_cnt, uart_data[0], uart_data[1]);
                             }
                         }
+                    } else {
+                        board_rx_invalid_count++;
                     }
                 } else {
+                    board_rx_tail_fail_count++;
                     if (debug_en) {
                         //printf("\r\n[ERR] Tail Fail! Expected:7F, Rx:%02X\r\n", read_byte);
                     }
