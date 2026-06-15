@@ -396,7 +396,7 @@ void Visual_Control_Loop(void) {
                     Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
                 } else {
                     // 无跳变（含 merge_coast 到期接受新目标）：正常追踪并更新参考坐标
-                    
+
                     dist_out = dist;
 
                     float current_speed = TARGET_SPEED;

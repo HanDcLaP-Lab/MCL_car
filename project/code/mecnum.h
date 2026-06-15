@@ -10,7 +10,7 @@
 #define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.028f   // 轮子半径
 #define PWM_MAX_M       7000.0f  // PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
-#define TARGET_SPEED    0.6f     // 目标速度 (m/s)
+#define TARGET_SPEED    0.75f     // 目标速度 (m/s)
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f   
@@ -38,7 +38,7 @@
 #define MOTOR_RB_DIR    P06_3               // 右后 DIR
 
 // 记忆/滑行参数
-#define COAST_HOLD_MS  300U      // 目标丢失后软滑行保持时间 (ms)
+#define COAST_HOLD_MS  400U      // 目标丢失后软滑行保持时间 (ms)
 #define LOCK_THRESHOLD 7         // 锁定所需连续有效跟踪帧数
 
 // 信标跳变检测

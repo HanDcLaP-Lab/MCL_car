@@ -46,7 +46,7 @@ void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务�
     IMU_Car_RC_Update_Loop();
 
     Mecanum_Control_Loop();
-    Encoder_Test_Print();
+    //Encoder_Test_Print();
       
     cnt++;
 }
