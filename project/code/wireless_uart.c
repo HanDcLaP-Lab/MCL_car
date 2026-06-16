@@ -79,8 +79,8 @@ void wireless_uart_output_target(void){
     wireless_uart_send_string(",");
     wireless_uart_send_float(uart_data[3]);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(ang_out);
-    wireless_uart_send_string(",");
+    //wireless_uart_send_float(ang_out);
+    //wireless_uart_send_string(",");
     wireless_uart_send_int((int32_t)Chassis_Get_Disarm_Flags());
     wireless_uart_send_string(",");
     wireless_uart_send_float(imu_car_rc_data.yaw_total);
@@ -133,24 +133,26 @@ void wireless_uart_output_coast(void) {
 
     uint32_t now = sys_time_ms;
 
+    wireless_uart_send_int(uart_data[5]);
+    
     if (dash_end_time > 0 && now < dash_end_time) {
         if (dash_source == 2) {
-            wireless_uart_send_string("DASH2,");
+            wireless_uart_send_string(",4,");
         } else {
-            wireless_uart_send_string("DASH1,");
+            wireless_uart_send_string(",3,");
         }
         wireless_uart_send_int((int32_t)(dash_end_time - now));
-        wireless_uart_send_string("\r\n");
-    }
-    if (visual_coast_end_time > 0 && now < visual_coast_end_time) {
-        wireless_uart_send_string("VIS,");
+        wireless_uart_send_string("\n");
+    }else if (visual_coast_end_time > 0 && now < visual_coast_end_time) {
+        wireless_uart_send_string(",1,");
         wireless_uart_send_int((int32_t)(visual_coast_end_time - now));
-        wireless_uart_send_string("\r\n");
-    }
-    if (merge_coast_end_time > 0 && now < merge_coast_end_time) {
-        wireless_uart_send_string("MERGE,");
+        wireless_uart_send_string("\n");
+    }else if (merge_coast_end_time > 0 && now < merge_coast_end_time) {
+        wireless_uart_send_string(",2,");
         wireless_uart_send_int((int32_t)(merge_coast_end_time - now));
-        wireless_uart_send_string("\r\n");
+        wireless_uart_send_string("\n");
+    }else{
+        wireless_uart_send_string(",0,0\n");
     }
 }
 

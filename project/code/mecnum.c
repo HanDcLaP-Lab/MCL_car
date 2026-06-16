@@ -30,6 +30,10 @@ float smooth_vx = 0.0f;
 float smooth_vy = 0.0f;
 float smooth_wz = 0.0f;
 
+// ================== 底盘使能状态机 (解除武装原因位掩码) ==================
+// 上电默认 IMU 未校准 → 锁定。仅当 disarm_flags == 0 时 Chassis_Is_Armed() 为真。
+static volatile uint8_t disarm_flags = DISARM_UNCALIBRATED;
+
 
 // ================== 内部辅助函数 ==================
 
@@ -157,9 +161,6 @@ void Visual_State_Reset(void) {
     // 信标闪烁时 state 1 可无限触发新一轮盲冲。
 }
 
-// ================== 底盘使能状态机 (解除武装原因位掩码) ==================
-// 上电默认 IMU 未校准 → 锁定。仅当 disarm_flags == 0 时 Chassis_Is_Armed() 为真。
-static volatile uint8_t disarm_flags = DISARM_UNCALIBRATED;
 
 // 复位全部 PID 积分项 (解锁起步 / 锁定停车共用)
 static void Reset_All_PID(void) {
@@ -674,6 +675,11 @@ void Mecanum_Control_Loop(void) {
         Motor_Set_Output(MOTOR_RF_PWM, MOTOR_RF_DIR, motor_output.rf);
         Motor_Set_Output(MOTOR_LB_PWM, MOTOR_LB_DIR, motor_output.lb);
         Motor_Set_Output(MOTOR_RB_PWM, MOTOR_RB_DIR, motor_output.rb);
+    }else{
+        pwm_set_duty(MOTOR_LF_PWM, 0);
+        pwm_set_duty(MOTOR_RF_PWM, 0);
+        pwm_set_duty(MOTOR_LB_PWM, 0);
+        pwm_set_duty(MOTOR_RB_PWM, 0);
     }
 }
 // 为方便显示，取mm/s
