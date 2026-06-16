@@ -106,6 +106,7 @@
 #include "kalman_filter.h"
 #include "pid.h"
 #include "encoder.h"
+#include "chassis_arm.h"
 #include "mecnum.h"
 #include "wireless_uart.h"
 #include "test.h"

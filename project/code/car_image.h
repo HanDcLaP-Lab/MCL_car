@@ -20,4 +20,34 @@ void Image_Init(void);
 // 解算目标相对于小车的距离和方位角
 void Image_Solve(float car_yaw, float *dist, float *angle);
 
+// ================== 视觉跟踪全局变量 (定义在 car_image.c) ==================
+extern volatile float    visual_last_vx;
+extern volatile float    visual_last_vy;
+extern volatile uint32_t visual_coast_end_time;
+extern volatile uint32_t merge_coast_end_time;
+extern volatile uint8_t  merge_coast_expired;
+extern volatile uint8_t  visual_coast_expired;
+extern volatile uint32_t dash_end_time;
+extern volatile uint32_t rush_cooldown_end_time;
+extern volatile uint8_t  dash_source;
+extern int rush_sign;
+extern float dist_out;
+
+// ================== 视觉跟踪 API ==================
+/**
+ * @brief 视觉控制循环，建议在定时器中断中调用 (周期需与 VISUAL_DT 一致)
+ */
+void Visual_Control_Loop(void);
+
+/**
+ * @brief 复位所有视觉跟踪状态 (盲冲/滑行/参考坐标等)
+ */
+void Visual_State_Reset(void);
+
+/**
+ * @brief ISR 级时间刹车检查 (dash/coast/merge 到期处理)
+ * @note  由 Mecanum_Control_Loop (1ms ISR) 调用，作为主循环串口无数据时的最后防线
+ */
+void Visual_Brake_Check(void);
+
 #endif

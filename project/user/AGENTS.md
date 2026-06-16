@@ -21,7 +21,7 @@
 7. Mecanum_Init()                       // 麦轮底盘 (GPIO/PWM/PID)
 8. wireless_uart_init_()                // 无线串口
 9. seekfree_assistant_interface_init()  // 无线调参协议
-10. pit_ms_init(PIT_CH1, 40)           // 40ms 定时器 (调试输出)
+10. pit_ms_init(PIT_CH1, 25)            // 25ms 定时器 (无线调试输出)
 11. pit_ms_init(PIT_CH0, 1)            // 1ms 定时器 (主控制循环)
 12. 进入主循环 for(;;)                   // 校准完成由 1ms ISR 自动清 DISARM_UNCALIBRATED 位解锁
 ```
@@ -31,7 +31,7 @@
 | 中断 | 周期/触发 | 处理内容 |
 |------|-----------|----------|
 | **PIT_CH0** | 1ms | ⚡ 硬实时：`IMU_Car_RC_Update_Loop()` + `Mecanum_Control_Loop()` |
-| **PIT_CH1** | 40ms | 调试数据输出（默认注释掉） |
+| **PIT_CH1** | 25ms | 无线调试输出：`wireless_uart_output_coast()` |
 | **PIT_CH2** | 未初始化 | 预留，原用于视觉控制周期 |
 | **UART0** | RX中断 | 调试串口 `debug_interrupr_handler()` |
 | **UART1** | RX中断 | 板间通讯：接收无人机数据写入 `board_rx_fifo` |
@@ -70,16 +70,17 @@
 - ❌ **修改 ISR 函数名** — ISR 名称由链接脚本/向量表固定，改名会导致中断不触发
 - ❌ **删除空占位 ISR** — 保留它们，防止未初始化中断触发 HardFault
 
-## 底盘使能状态机 (6.12d 重构后)
+## 底盘使能状态机 (6.15a 重构后)
 
-底盘是否输出动力，由单一掩码 `disarm_flags` (mecnum.c) 决定：**三位全清 (==0) 才武装**。
-每个停车来源只置/清自己那一位，互不干扰；任一位为 1 即锁定停车。接口在 `mecnum.h`：
+底盘是否输出动力，由单一掩码 `disarm_flags` (`chassis_arm.c`) 决定：**四位全清 (==0) 才武装**。
+每个停车来源只置/清自己那一位，互不干扰；任一位为 1 即锁定停车。接口在 `chassis_arm.h`：
 `Chassis_Block(reason)` / `Chassis_Unblock(reason)` / `Chassis_Is_Armed()` / `Chassis_Get_Disarm_Flags()`。
 
 ```
-   bit0 DISARM_UNCALIBRATED   置: IMU 未校准       清: IMU 校准完成        ← 1ms ISR (mecnum)
-   bit1 DISARM_COMM_LOST      置: 看门狗>1000ms    清: 收到无人机下传数据  ← 主循环 (main_cm4)
-   bit2 DISARM_MANUAL         置: 无线 ch8 == 1    清: 无线 ch8 == 0       ← 调参回调
+   bit0 DISARM_UNCALIBRATED   置: IMU 未校准       清: IMU 校准完成        ← 1ms ISR (mecnum.c)
+   bit1 DISARM_COMM_LOST      置: 看门狗>1000ms    清: 收到无人机下传数据  ← 主循环 (main_cm4.c)
+   bit2 DISARM_MANUAL         置: 无线 ch8 == 1    清: 无线 ch8 == 0       ← 调参回调 (main_cm4.c)
+   bit3 DISARM_DRONE_STOPPED  置: uart_data[6]<0.5 清: uart_data[6]>=0.5  ← 主循环 (main_cm4.c)
 
    ┌──────────────────────┐  任一 Chassis_Block(reason)   ┌──────────────────────┐
    │ ARMED  flags == 0    │ ────────────────────────────► │ DISARMED  flags != 0 │
@@ -89,4 +90,18 @@
 
    幂等: Block 同一位重复调用→直接返回 (杜绝 1ms 狂调清理)。
    关键安全路径: 人工急停(bit2) 期间断连(bit1) → 重连只清 bit1 → 仍 DISARMED → 必须 ch8=0 才跑。
+   已知问题: disarm_flags 初始值仅设 DISARM_UNCALIBRATED，未设 DISARM_COMM_LOST，IMU 校准后到首次
+            收到 drone 数据前短暂处于 ARMED（无实际风险，target_vel=0）。
 ```
+
+## 代码组织 (6.15a 重构后)
+
+`mecnum.c` 原 696 行按功能域拆为三个文件：
+
+| 文件 | 职责 | 行数(估) |
+|------|------|----------|
+| `chassis_arm.c/h` | 使能状态机：disarm_flags + Block/Unblock + 停车清理 | ~70 |
+| `car_image.c/h` | 视觉跟踪：State0~4_Handler + 盲冲/滑行 + Image_Solve | ~320 |
+| `mecnum.c/h` | 底层运动控制：电机引脚 + 逆运动学 + 轮速PID + 偏航串级 | ~304 |
+
+依赖方向: `mecnum.c` → `chassis_arm.c` → `car_image.c`（mecnum 调用 Visual_Brake_Check；chassis_arm 调用 Visual_State_Reset）。

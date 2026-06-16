@@ -126,10 +126,6 @@ void wireless_uart_output_encoder(void){
 
 void wireless_uart_output_coast(void) {
     extern volatile uint32_t sys_time_ms;
-    extern volatile uint32_t dash_end_time;
-    extern volatile uint32_t visual_coast_end_time;
-    extern volatile uint32_t merge_coast_end_time;
-    extern volatile uint8_t  dash_source;
 
     uint32_t now = sys_time_ms;
 
