@@ -215,3 +215,20 @@ void wireless_uart_output_comm_debug(void) {
 void print_imu(void){
     printf("%f,%f,%f,%f\n",imu_car_rc_data.pitch , imu_car_rc_data.roll , imu_car_rc_data.yaw , imu_car_rc_data.yaw_total);
 }
+
+// 板间双向通讯收包统计调试输出 (格式同 output_coast: 纯数字 + 逗号, 结尾换行)
+// 输出: <成功接收次数>,<失败次数>,<最近失败原因码>\n
+//   成功次数   = board_rx_ok_count (有效 CMD_MASTER 帧且数据合法)
+//   失败次数   = 校验和失败 + 帧尾失败 + 数据非法 + 命令字不匹配 之和
+//   原因码     = board_rx_last_err: 0=无/最近成功 1=校验和 2=帧尾 3=数据非法 4=命令字不匹配
+void wireless_uart_output_board_comm(void){
+    wireless_uart_send_int((int32_t)board_rx_ok_count);
+    wireless_uart_send_string(",");
+    wireless_uart_send_int((int32_t)(board_rx_checksum_fail_count
+                                   + board_rx_tail_fail_count
+                                   + board_rx_invalid_count
+                                   + board_rx_cmd_mismatch_count));
+    wireless_uart_send_string(",");
+    wireless_uart_send_int((int32_t)board_rx_last_err);
+    wireless_uart_send_string("\n");
+}

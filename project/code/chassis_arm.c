@@ -26,7 +26,8 @@ static void Chassis_Apply_Stop(void) {
     pwm_set_duty(MOTOR_LF_PWM, 0);
     pwm_set_duty(MOTOR_RF_PWM, 0);
     pwm_set_duty(MOTOR_LB_PWM, 0);
-    pwm_set_duty(MOTOR_RB_PWM, 0);
+    // [临时-引脚冲突] 右后电机 PWM(P06_1) 与 UART1 TX 冲突, 双向通讯期间暂停
+    // pwm_set_duty(MOTOR_RB_PWM, 0);
     Reset_All_PID();
     motor_output.lf = 0; motor_output.rf = 0;
     motor_output.lb = 0; motor_output.rb = 0;

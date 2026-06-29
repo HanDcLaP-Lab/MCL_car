@@ -18,5 +18,6 @@ void wireless_uart_output_coast(void);
 // 手动调试用：默认不调用，需要时在 PIT_CH1 等调试位置临时打开。
 void wireless_uart_output_stop_debug(void);
 void wireless_uart_output_comm_debug(void);
+void wireless_uart_output_board_comm(void);   // 板间双向通讯收包统计: 成功数,失败数,原因码
 void print_imu(void);
 #endif

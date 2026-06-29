@@ -110,7 +110,8 @@ void Mecanum_Init(void) {
     pwm_init(MOTOR_LF_PWM, 17000, 0);
     pwm_init(MOTOR_RF_PWM, 17000, 0);
     pwm_init(MOTOR_LB_PWM, 17000, 0);
-    pwm_init(MOTOR_RB_PWM, 17000, 0);
+    // [临时-引脚冲突] MOTOR_RB_PWM(P06_1) 与 UART1_TX_P06_1 冲突, 双向通讯期间暂停右后电机 PWM
+    // pwm_init(MOTOR_RB_PWM, 17000, 0);
 
     // 3. 初始化 PID
     // &pid, kp, ki, kd, max_i, out_max
@@ -282,12 +283,14 @@ void Mecanum_Control_Loop(void) {
         Motor_Set_Output(MOTOR_LF_PWM, MOTOR_LF_DIR, motor_output.lf);
         Motor_Set_Output(MOTOR_RF_PWM, MOTOR_RF_DIR, motor_output.rf);
         Motor_Set_Output(MOTOR_LB_PWM, MOTOR_LB_DIR, motor_output.lb);
-        Motor_Set_Output(MOTOR_RB_PWM, MOTOR_RB_DIR, motor_output.rb);
+        // [临时-引脚冲突] 右后电机 PWM(P06_1) 与 UART1 TX 冲突, 双向通讯期间暂停输出
+        // Motor_Set_Output(MOTOR_RB_PWM, MOTOR_RB_DIR, motor_output.rb);
     }else{
         pwm_set_duty(MOTOR_LF_PWM, 0);
         pwm_set_duty(MOTOR_RF_PWM, 0);
         pwm_set_duty(MOTOR_LB_PWM, 0);
-        pwm_set_duty(MOTOR_RB_PWM, 0);
+        // [临时-引脚冲突] 同上, 暂停右后电机 PWM
+        // pwm_set_duty(MOTOR_RB_PWM, 0);
     }
 }
 // 为方便显示，取mm/s

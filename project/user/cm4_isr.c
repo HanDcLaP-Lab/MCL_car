@@ -56,7 +56,8 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务�
     pit_isr_flag_clear(PIT_CH1);
     static uint8_t comm_debug_div = 0;
 
-    wireless_uart_output_coast();
+    //wireless_uart_output_coast();
+    wireless_uart_output_board_comm();
     // if (++comm_debug_div >= 8) {
     //     comm_debug_div = 0;
     //     wireless_uart_output_comm_debug();
