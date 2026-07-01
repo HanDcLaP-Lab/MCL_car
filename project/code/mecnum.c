@@ -128,6 +128,7 @@ void Mecanum_Init(void) {
 }
 
 volatile uint32_t sys_time_ms = 0;
+volatile uint32_t main_loop_heartbeat_ms = 0;   // 主循环存活心跳 (由 main_cm4 主循环刷新)
 
 void Mecanum_Control_Loop(void) {
     sys_time_ms++;
@@ -144,13 +145,20 @@ void Mecanum_Control_Loop(void) {
         return;
     }
 
+    // 主循环存活看门狗：主循环卡死(如板间 RX 排空死循环、某中断阻塞)时，
+    // car_en 处理与通信看门狗(都在主循环里)都无法执行，动力会失控。
+    // 此处在 1ms ISR 内直接判定：超过 MAINLOOP_STALL_MS 未刷新心跳 → 视为未武装，
+    // 强制切断动力。armed 折入现有武装判据，避免从 ISR 改写 disarm_flags 引入新竞态。
+    uint8_t main_alive = ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) <= MAINLOOP_STALL_MS);
+    uint8_t armed = (Chassis_Is_Armed() && main_alive);
+
     // ISR 级时间刹车检查 (dash/coast/merge 到期处理)，由 car_image.c 实现
     Visual_Brake_Check();
     // ==========================================================
     // 【核心一】只对“用户目标指令”进行斜坡平滑 (防起步打滑)
     // 根据设定的最大加速度，限制每 1ms (CONTROL_DT) 的速度变化量
     // ==========================================================
-    if (Chassis_Is_Armed()) {
+    if (armed) {
         float step_x = MAX_ACCEL_X * CONTROL_DT;
         float step_y = MAX_ACCEL_Y * CONTROL_DT;
         float step_w = MAX_ACCEL_W * CONTROL_DT;
@@ -181,7 +189,7 @@ void Mecanum_Control_Loop(void) {
     // ==========================================================
     float final_wz = smooth_wz; // 默认采用平滑后的目标自转速度
     
-    if (Chassis_Is_Armed()) {
+    if (armed) {
             // 将陀螺仪实际角速度从 deg/s 转换为 rad/s，统一量纲！
             float current_rate_rad = imu_car_rc_data.yaw_rate * ((float)M_PI / 180.0f);
 
@@ -244,7 +252,7 @@ void Mecanum_Control_Loop(void) {
     float err_lb = target_vel.v_lb - encoder_data.lb;
     float err_rb = target_vel.v_rb - encoder_data.rb;
 
-    if (Chassis_Is_Armed()) {
+    if (armed) {
         // 计算原始增量 PID 输出 (此时绝不能限幅)
         motor_output.lf = PID_Calculate_Incremental(&pid_lf, err_lf, CONTROL_DT);
         motor_output.rf = PID_Calculate_Incremental(&pid_rf, err_rf, CONTROL_DT);
@@ -278,7 +286,7 @@ void Mecanum_Control_Loop(void) {
     // ==========================================================
     // 5. 最终执行电机控制
     // ==========================================================
-    if (Chassis_Is_Armed()) {
+    if (armed) {
         Motor_Set_Output(MOTOR_LF_PWM, MOTOR_LF_DIR, motor_output.lf);
         Motor_Set_Output(MOTOR_RF_PWM, MOTOR_RF_DIR, motor_output.rf);
         Motor_Set_Output(MOTOR_LB_PWM, MOTOR_LB_DIR, motor_output.lb);

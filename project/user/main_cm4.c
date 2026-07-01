@@ -47,11 +47,13 @@
 extern volatile uint8_t board_rx_complete_flag;
 extern int32_t cnt;
 extern volatile uint32_t sys_time_ms;
+extern volatile uint32_t main_loop_heartbeat_ms;   // 主循环存活心跳 (定义在 mecnum.c)
 volatile uint32_t drone_timeout_debug = 0;
 volatile uint32_t board_rx_ok_debug = 0;
 volatile uint32_t visual_loop_count_debug = 0;
 volatile uint32_t visual_loop_dt_debug = 0;
 volatile uint32_t visual_loop_max_dt_debug = 0;
+volatile uint8_t  board_comm_debug_pending = 0;   // [移出中断] pit0_ch1(500ms) 置位，主循环消费并发送无线调试打印
 //int mv_en = 0;
 void Wireless_Update(uint8_t ch, float val);
 int main(void)
@@ -75,6 +77,7 @@ int main(void)
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     pit_ms_init(PIT_CH0, 1);
     while (imu_car_rc_data.is_calibrated == 0) {
+        main_loop_heartbeat_ms = sys_time_ms;   // 存活心跳：校准等待期也喂狗，防止刚武装即误判卡死
         Parse_Board_Uart_Data();
         seekfree_assistant_data_analysis();
         system_delay_ms(1);
@@ -85,6 +88,11 @@ int main(void)
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
+        // 主循环存活心跳：每轮无条件刷新。1ms ISR 若发现超过 MAINLOOP_STALL_MS 未刷新，
+        // 判定主循环卡死并强制切断动力。务必放在循环最前、任何可能长时间阻塞的调用之前，
+        // 这样"卡在 Parse/解析里出不来"就一定会被 ISR 看门狗捕获。
+        main_loop_heartbeat_ms = sys_time_ms;
+
         // 此处编写需要循环执行的代码
         // 此处编写需要循环执行的代码
         // 此处编写需要循环执行的代码
@@ -153,6 +161,35 @@ int main(void)
                 // 可选：通过无线串口回传确认，告诉上位机收到并更新了
                 wireless_uart_send_string("Param Updated\r\n");
             }
+        }
+
+        // [移出中断] 板间通讯无线调试打印：原在 pit0_ch1(500ms) 中断里做，阻塞式无线发送
+        // 会占住中断、顶掉 1ms 控制 ISR 的节拍。现在中断只置 board_comm_debug_pending，
+        // 这里在主循环里实际发送（连同原有的一堆注释一并搬来，方便随时切换打印内容）。
+        if (board_comm_debug_pending) {
+            board_comm_debug_pending = 0;
+            static uint8_t comm_debug_div = 0;
+
+            wireless_uart_output_coast();
+            // if (++comm_debug_div >= 8) {
+            //     comm_debug_div = 0;
+            //     wireless_uart_output_comm_debug();
+            // }
+            //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_rc_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
+            //Current_speed_display();
+            //wireless_uart_output_imu();
+            //print_imu();
+            //wireless_uart_output_target();
+            // printf("%.2f," , uart_data[0]);
+            // printf("%.2f," , uart_data[1]);
+            // printf("%.2f," , uart_data[2]);
+            // printf("%.2f," , uart_data[6]);
+            // printf("%.2f\n" , uart_data[3]);
+            // wireless_uart_send_int((uint8_t)uart_data[5]);
+            // wireless_uart_send_string(",");
+            // wireless_uart_send_int(rush_sign);
+            // wireless_uart_send_string("\n");
+            //if(rush_sign) rush_sign = 0;
         }
 
         system_delay_ms(1); // 稍微延时

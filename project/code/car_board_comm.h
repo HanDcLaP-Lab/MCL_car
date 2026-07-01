@@ -30,6 +30,7 @@ extern volatile uint32_t board_rx_invalid_count;
 extern volatile uint32_t board_rx_last_dt_ms;
 extern volatile uint32_t board_rx_max_dt_ms;
 extern volatile uint32_t board_rx_fifo_max_used;
+extern volatile uint32_t board_rx_fifo_corrupt_count;
 
 // ================= 函数声明 =================
 void Board_Comm_Init(void);               // 通讯初始化

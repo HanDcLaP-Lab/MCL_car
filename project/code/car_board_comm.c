@@ -16,6 +16,7 @@ volatile uint32_t board_rx_invalid_count = 0;
 volatile uint32_t board_rx_last_dt_ms = 0;
 volatile uint32_t board_rx_max_dt_ms = 0;
 volatile uint32_t board_rx_fifo_max_used = 0;
+volatile uint32_t board_rx_fifo_corrupt_count = 0;   // [并发加固] fifo_used 越界(size被竞态写坏)被清空的次数
 
 // 接收状态机枚举
 typedef enum {
@@ -53,15 +54,37 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
     
     uint8_t read_byte;
     uint32_t len;
+    uint32_t primask;
+
+    // [并发加固] board_rx_fifo 的 fifo->size 被 uart1_isr(写) 与本函数(读) 跨上下文
+    // 非原子读改写。竞态丢更新会让 size 漂移；而 fifo_used()=max-size 是无符号运算，
+    // 一旦 size 越界导致下溢成巨大值，原来的 while(fifo_used>0) 会退化成死循环，
+    // 直接拖死主循环(car_en 处理与通信看门狗都在主循环里) —— 即"停止信号失效"的根源之一。
+    // 对策：
+    //   ① 关中断内快照一次 fifo_used 并做越界钳位(size 已损坏则清空 FIFO，绝不进死循环)；
+    //   ② 用快照长度 fifo_now 驱动循环 → 循环次数有界，永远不可能无限打转；
+    //   ③ 每次 fifo_read_buffer 用临界区与写方 ISR 串行化，保护 size 的读改写。
+    primask = interrupt_global_disable();
     uint32_t fifo_now = fifo_used(&board_rx_fifo);
+    if (fifo_now > sizeof(rx_buffer)) {          // size 被写坏 → fifo_used 下溢，判定损坏
+        fifo_clear(&board_rx_fifo);
+        fifo_now = 0;
+        board_rx_fifo_corrupt_count++;
+    }
+    interrupt_global_enable(primask);
+
     if (fifo_now > board_rx_fifo_max_used) {
         board_rx_fifo_max_used = fifo_now;
     }
 
-    while (fifo_used(&board_rx_fifo) > 0) 
+    while (fifo_now > 0)
     {
-        len = 1; 
+        len = 1;
+        primask = interrupt_global_disable();
         fifo_read_buffer(&board_rx_fifo, &read_byte, &len, FIFO_READ_AND_CLEAN);
+        interrupt_global_enable(primask);
+        if (len == 0) break;                     // 防呆：未读到数据立即退出，杜绝空转
+        fifo_now--;
 
         switch (state) {
             case STEP_HEADER1:

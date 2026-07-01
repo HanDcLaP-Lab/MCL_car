@@ -116,13 +116,21 @@ static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float
         Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
         return 0;
     } else {
-        // Coast 到期
+        // Coast 到期(主循环路径)：必须真正停车，而不是继续重放 visual_last。
+        // [隐患修复] 旧实现把 visual_coast_end_time 清零后仍下发 visual_last，
+        // 下一拍进来发现 end_time==0 会重新拉起一个新的 coast 周期 → "无限续滑"：
+        // 主循环这条路永远滑不停，真正刹停只能靠 1ms ISR 的 Visual_Brake_Check，
+        // 形成主循环与 ISR 抢时序、滑行忽长忽短、停不干净的脆弱行为。
+        // 现在与 ISR 到期路径语义对齐：清零残余速度并停车。即使下一拍 end_time==0
+        // 重入，也只会以 0 速度"滑行"，不再驱动电机。
         if (has_prev && target_valid) {
             *prev_x = uart_data[2];
             *prev_y = uart_data[3];
         }
         visual_coast_end_time = 0;
-        Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+        visual_last_vx = 0.0f;
+        visual_last_vy = 0.0f;
+        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
         return 0;
     }
 }

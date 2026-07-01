@@ -36,6 +36,11 @@
 
 #include "zf_common_headfile.h"
 
+// [移出中断] 板间通讯无线调试打印改由主循环执行，中断内仅置位该标志。
+// 阻塞式无线发送若留在中断里会长时间占用中断、顶掉 1ms 控制 ISR 的执行节拍，
+// 破坏航向/轮速环整定所依赖的固定 CONTROL_DT，诱发姿态自激。
+extern volatile uint8_t board_comm_debug_pending;
+
 int32_t cnt = 0;
 // **************************** PIT中断函数 ****************************
 void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务函数      
@@ -54,29 +59,8 @@ void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务�
 void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务函数
 {
     pit_isr_flag_clear(PIT_CH1);
-    static uint8_t comm_debug_div = 0;
-
-    wireless_uart_output_coast();
-    // if (++comm_debug_div >= 8) {
-    //     comm_debug_div = 0;
-    //     wireless_uart_output_comm_debug();
-    // }
-    //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_rc_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
-    //Current_speed_display();
-    //wireless_uart_output_imu();
-    //print_imu();
-    //wireless_uart_output_target();
-    // printf("%.2f," , uart_data[0]);
-    // printf("%.2f," , uart_data[1]);
-    // printf("%.2f," , uart_data[2]);
-    // printf("%.2f," , uart_data[6]);
-    // printf("%.2f\n" , uart_data[3]);
-    // wireless_uart_send_int((uint8_t)uart_data[5]);
-    // wireless_uart_send_string(",");
-    // wireless_uart_send_int(rush_sign);
-    // wireless_uart_send_string("\n");
-    //if(rush_sign) rush_sign = 0;
-
+    // [移出中断] 只置标志，实际阻塞式无线打印在主循环里做，避免顶掉 1ms 控制 ISR 节拍
+    board_comm_debug_pending = 1;
 }
 
 void pit0_ch2_isr()                     // 定时器通道 2 周期中断服务函数      
