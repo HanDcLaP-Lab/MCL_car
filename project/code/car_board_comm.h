@@ -5,7 +5,7 @@
 
 // ================= 板间通讯硬件配置 =================
 #define BOARD_UART       UART_1
-#define BOARD_BAUDRATE   115200
+#define BOARD_BAUDRATE   1000000
 #define BOARD_TX_PIN     UART1_TX_P06_1
 #define BOARD_RX_PIN     UART1_RX_P06_0
 

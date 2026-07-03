@@ -71,8 +71,7 @@ int main(void)
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     
-    pit_ms_init(PIT_CH1, 25);
-    //pit_ms_init(PIT_CH2, 20); // 视觉控制周期 20ms
+    pit_ms_init(PIT_CH1, 500);
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     pit_ms_init(PIT_CH0, 1);
@@ -170,7 +169,7 @@ int main(void)
             board_comm_debug_pending = 0;
             static uint8_t comm_debug_div = 0;
 
-            wireless_uart_output_coast();
+            //wireless_uart_output_coast();
             // if (++comm_debug_div >= 8) {
             //     comm_debug_div = 0;
             //     wireless_uart_output_comm_debug();
@@ -179,7 +178,7 @@ int main(void)
             //Current_speed_display();
             //wireless_uart_output_imu();
             //print_imu();
-            //wireless_uart_output_target();
+            //wireless_uart_output_commu();
             // printf("%.2f," , uart_data[0]);
             // printf("%.2f," , uart_data[1]);
             // printf("%.2f," , uart_data[2]);
