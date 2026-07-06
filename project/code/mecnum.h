@@ -17,9 +17,8 @@
 #define VISUAL_DT       0.020f
 
 // 【新增】加速度限制 (单位: m/s^2 和 rad/s^2)
-// 例如: 2.0m/s^2 意味着从 0 加速到 1.0m/s 需要 0.5秒
-#define MAX_ACCEL_X  100.0f
-#define MAX_ACCEL_Y  100.0f
+#define MAX_ACCEL_X  25.0f
+#define MAX_ACCEL_Y  25.0f
 #define MAX_ACCEL_W  10.0f
 
 
@@ -38,19 +37,19 @@
 #define MOTOR_RB_DIR    P06_3               // 右后 DIR
 
 // 记忆/滑行参数
-#define COAST_HOLD_MS  400U      // 目标丢失后软滑行保持时间 (ms)
+#define COAST_HOLD_MS  600U      // 目标丢失后软滑行保持时间 (ms)
 #define LOCK_THRESHOLD 7         // 锁定所需连续有效跟踪帧数
 
 // 信标跳变检测
 #define JUMP_THRESHOLD_MIN      50.0f   // 跳变检测阈值下限 (cm)
 #define JUMP_THRESHOLD_MAX      200.0f  // 跳变检测阈值上限 (cm)
 #define JUMP_SCALE_COEF         0.4f    // 跳变阈值缩放系数 (× car_dist)
-#define MERGE_COAST_MS          400U    // 信标跳变滑行持续时间 (ms)
+#define MERGE_COAST_MS          600U    // 信标跳变滑行持续时间 (ms)
 
 // 边缘判定
 #define EDGE_DIST_CM            200.0f  // 信标距画面中心距离分界 (cm)，>此值视为边缘
 #define DASH_MS_MIN             200U    // 盲冲时长下限 (ms)
-#define DASH_MS_MAX             500U    // 盲冲时长上限 (ms)
+#define DASH_MS_MAX             650U    // 盲冲时长上限 (ms)
 #define DASH_CNT_THRESHOLD      5
 
 #include "chassis_arm.h"

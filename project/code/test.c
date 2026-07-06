@@ -22,11 +22,11 @@ void test_program_1(void)
     Chassis_Unblock(DISARM_MANUAL);
 
     while(1){
-        Mecanum_Set_Velocity(0.6f, 0.0f, 0.0f);
+        Mecanum_Set_Velocity(0.75f, 0.0f, 0.0f);
         system_delay_ms(3500);
         Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
         system_delay_ms(2000);
-        Mecanum_Set_Velocity(-0.6f, 0.0f, 0.0f);
+        Mecanum_Set_Velocity(-0.75f, 0.0f, 0.0f);
         system_delay_ms(3500);
         Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
         system_delay_ms(2000);

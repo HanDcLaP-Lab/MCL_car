@@ -71,7 +71,7 @@ int main(void)
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     
-    pit_ms_init(PIT_CH1, 500);
+    pit_ms_init(PIT_CH1, 200);
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     pit_ms_init(PIT_CH0, 1);
@@ -162,9 +162,7 @@ int main(void)
             }
         }
 
-        // [移出中断] 板间通讯无线调试打印：原在 pit0_ch1(500ms) 中断里做，阻塞式无线发送
-        // 会占住中断、顶掉 1ms 控制 ISR 的节拍。现在中断只置 board_comm_debug_pending，
-        // 这里在主循环里实际发送（连同原有的一堆注释一并搬来，方便随时切换打印内容）。
+/* 无线串口打印开始 */
         if (board_comm_debug_pending) {
             board_comm_debug_pending = 0;
             static uint8_t comm_debug_div = 0;
@@ -176,7 +174,7 @@ int main(void)
             // }
             //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_rc_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
             //Current_speed_display();
-            //wireless_uart_output_imu();
+            //wireless_uart_output_motor();
             //print_imu();
             //wireless_uart_output_commu();
             // printf("%.2f," , uart_data[0]);
@@ -190,6 +188,7 @@ int main(void)
             // wireless_uart_send_string("\n");
             //if(rush_sign) rush_sign = 0;
         }
+/* 无线串口打印结束 */
 
         system_delay_ms(1); // 稍微延时
         
