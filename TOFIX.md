@@ -35,7 +35,7 @@ Scope: `project/code`, `project/user`, and only the library behavior needed to e
 - Evidence:
   - `project/code/mecnum.c:136-159` `Mecanum_Stop()` clears speed, PWM, PID, and lock state.
   - `project/code/mecnum.c:161-180` `Mecanum_Unlock()` clears speed, PWM, and PID.
-  - Neither clears `dash_end_time`, `rush_cooldown_end_time`, `rush_sign`, nor `Visual_Control_Loop()` static state such as `last_vx`, `last_vy`, `valid_track_cnt`, `lost_cnt`, `coast_end_time`, and `merge_coast_end_time`.
+  - Neither clears `dash_end_time`, `rush_cooldown_end_time`, `rush_sign`, nor old visual static state such as last velocity, lock memory, coast timer, and merge coast timer.
   - `project/code/mecnum.c:214-229` blind dash is processed before new visual state.
 - Risk:
   - If emergency stop or timeout happens during blind dash, a quick unlock can resume the old dash velocity until `dash_end_time` expires.
@@ -215,14 +215,15 @@ Scope: `project/code`, `project/user`, and only the library behavior needed to e
 - Suggested direction:
   - 既然旋转已停用，这整套 `was_aligning`/倒计时逻辑应一并禁用。
 
-### 20. valid_track_cnt 不被 Mecanum_Stop/急停清理
+### 20. [FIXED] valid_track_cnt 不被 Mecanum_Stop/急停清理
 
 - Evidence:
-  - `valid_track_cnt` 是 `Visual_Control_Loop` 内的局部静态变量，没有被外部复位函数（如 `Visual_State_Reset`）清理。
+  - 旧实现使用 `valid_track_cnt` 作为视觉帧计数记忆，且不能被外部复位函数（如 `Visual_State_Reset`）可靠清理。
+  - 当前实现已改为 `last_valid_track_time_ms` + `TRACK_MEMORY_MS = 1000U`，并在 `Visual_State_Reset()` 和过期路径中清理。
 - Risk:
-  - 看门狗急停又恢复通讯后，残留的"曾经有效跟踪"记忆允许小车在接收到一个孤立的 state 4（噪点或遮挡产生）数据包时，直接触发盲冲爆冲。
+  - 修复前，看门狗急停又恢复通讯后，残留的"曾经有效跟踪"记忆允许小车在接收到一个孤立的 state 4（噪点或遮挡产生）数据包时，直接触发盲冲爆冲。
 - Suggested direction:
-  - 将 `valid_track_cnt` 从局部静态变量改为全局变量，并在 `Visual_State_Reset` 等复位逻辑中一并清零。
+  - 保持时间戳记忆路径，不再恢复帧计数锁定逻辑。
 
 ### 21. 盲冲早退屏蔽状态 3 恢复帧
 

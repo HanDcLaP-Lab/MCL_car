@@ -17,7 +17,10 @@ volatile uint8_t  dash_source = 0;            // dash 触发来源: 1=状态4融
 
 // ================== 视觉状态机共享静态变量 ==================
 static uint16_t is_edge = 0;
-static uint16_t valid_track_cnt = 0;
+static uint32_t track_memory_ms = 0;
+static uint32_t track_memory_last_ms = 0;
+static uint32_t track_memory_step_ms = 0;
+static uint8_t  track_memory_started = 0;
 static float    prev_target_x = 0.0f, prev_target_y = 0.0f;
 static uint8_t  has_prev_target = 0;
 static float    prev_car_dist = 0.0f;
@@ -28,6 +31,11 @@ static void State12_Handler(uint8_t locked_state);
 static void State3_Handler(void);
 static void State4_Handler(void);
 static float Compute_Jump_Threshold(float car_dist);
+static void Visual_Track_Begin_Frame(void);
+static void Visual_Track_Refresh(void);
+static void Visual_Track_Decay(void);
+static void Visual_Track_Clear(void);
+static uint8_t Visual_Track_Is_Locked(void);
 static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float *prev_y, float prev_dist, uint8_t target_valid);
 
 // ================== 现有函数 (不变) ==================
@@ -77,6 +85,51 @@ static float Compute_Jump_Threshold(float car_dist) {
     if (thr < JUMP_THRESHOLD_MIN) thr = JUMP_THRESHOLD_MIN;
     if (thr > JUMP_THRESHOLD_MAX) thr = JUMP_THRESHOLD_MAX;
     return thr;
+}
+
+static void Visual_Track_Begin_Frame(void) {
+    uint32_t now = sys_time_ms;
+
+    if (!track_memory_started) {
+        track_memory_started = 1;
+        track_memory_last_ms = now;
+        track_memory_step_ms = 0;
+        return;
+    }
+
+    track_memory_step_ms = now - track_memory_last_ms;
+    track_memory_last_ms = now;
+    if (track_memory_step_ms > TRACK_MEMORY_MS) track_memory_step_ms = TRACK_MEMORY_MS;
+}
+
+static void Visual_Track_Refresh(void) {
+    uint32_t add_ms = track_memory_step_ms;
+    if (add_ms > TRACK_STEP_MAX_MS) add_ms = TRACK_STEP_MAX_MS;
+
+    if (track_memory_ms + add_ms > TRACK_MEMORY_MS) {
+        track_memory_ms = TRACK_MEMORY_MS;
+    } else {
+        track_memory_ms += add_ms;
+    }
+}
+
+static void Visual_Track_Decay(void) {
+    if (track_memory_ms > track_memory_step_ms) {
+        track_memory_ms -= track_memory_step_ms;
+    } else {
+        track_memory_ms = 0;
+    }
+}
+
+static void Visual_Track_Clear(void) {
+    track_memory_ms = 0;
+    track_memory_last_ms = sys_time_ms;
+    track_memory_step_ms = 0;
+    track_memory_started = 1;
+}
+
+static uint8_t Visual_Track_Is_Locked(void) {
+    return (track_memory_ms >= TRACK_LOCK_THRESHOLD_MS);
 }
 
 // 统一软滑行处理（含近距恢复检测），替代原先各处盲回放+到期停车模式
@@ -140,7 +193,7 @@ static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float
 // 状态 0：全丢 → 停车 + 清零
 static void State0_Handler(void) {
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
-    valid_track_cnt = 0;
+    Visual_Track_Clear();
     dash_end_time = 0;
     visual_coast_end_time = 0;
 }
@@ -148,11 +201,10 @@ static void State0_Handler(void) {
 // 状态 1 或 2：单目标丢失
 // locked_state: 1=仅小车可见, 2=仅信标可见 (target_valid 据此区分)
 static void State12_Handler(uint8_t locked_state) {
-    // 单目标丢失时逐步衰减锁定置信度：若信标持续不可见，
-    // valid_track_cnt 最终降至 LOCK_THRESHOLD 以下，退出盲冲
-    if (valid_track_cnt > 0) valid_track_cnt--;
+    // 单目标丢失时按真实经过时间衰减锁定置信度，语义等价于旧 valid_track_cnt--。
+    Visual_Track_Decay();
 
-    if (valid_track_cnt > LOCK_THRESHOLD) {
+    if (Visual_Track_Is_Locked()) {
         // 已锁定：触发不可中断盲冲，维持原方向直到 dash 到期
         visual_coast_end_time = 0;
         uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
@@ -169,7 +221,6 @@ static void State12_Handler(uint8_t locked_state) {
             // 冷却期内：软滑行（含近距恢复检测），避免死循环空 dash
             Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist, (locked_state == 2));
         }
-        // 不清 valid_track_cnt：dash 到期后供状态4续用，防止多点亮场景死停
     } else {
         // 未锁定：软滑行（含近距恢复检测）
         Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist, (locked_state == 2));
@@ -199,7 +250,7 @@ static void State3_Handler(void) {
         } else {
             // 仍是远处信标：维持原方向滑行，prev 不更新，死咬原始信标
             Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
-            if (valid_track_cnt < 1000) valid_track_cnt++;
+            Visual_Track_Refresh();
             is_edge = (uart_data[7] > EDGE_DIST_CM);
         }
     }
@@ -253,7 +304,7 @@ static void State3_Handler(void) {
             has_prev_target = 1;
         }
 
-        if (valid_track_cnt < 1000) valid_track_cnt++;
+        Visual_Track_Refresh();
         is_edge = (uart_data[7] > EDGE_DIST_CM);
     }
 }
@@ -263,7 +314,7 @@ static void State4_Handler(void) {
     if (!is_edge) {
         uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
         // 在中心丢失，极大可能是近距离融合，执行硬实时绝对精确盲冲 (加入1秒防重入冷却)
-        if (dash_end_time == 0 && valid_track_cnt > DASH_CNT_THRESHOLD && !is_cooldown) {
+        if (dash_end_time == 0 && Visual_Track_Is_Locked() && !is_cooldown) {
             visual_coast_end_time = 0;
             float speed_sq = visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy;
             float speed = sqrtf(speed_sq);
@@ -353,8 +404,9 @@ void Visual_Control_Loop(void) {
 #endif
 
     if (!Chassis_Is_Armed()) return;
+    Visual_Track_Begin_Frame();
 
-    if (valid_track_cnt == 0) {
+    if (track_memory_ms == 0) {
         is_edge = 0; // [隐患修复 P2.10]: 追踪彻底断开时，清空老旧的边缘记忆
     }
 

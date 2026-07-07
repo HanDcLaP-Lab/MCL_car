@@ -38,12 +38,12 @@ MCL_car/
 
 | 任务 | 位置 | 说明 |
 |------|------|------|
-| 底盘运动控制 / 麦轮解算 / 视觉追踪 | `project/code/mecnum.c` | 主控逻辑，~400行 |
+| 底盘运动控制 / 麦轮解算 | `project/code/mecnum.c` | 1ms控制环、逆运动学、轮速PID |
 | PID 控制器 | `project/code/pid.c` | 增量式 + 位置式 PID |
 | 编码器读取 (4个电机) | `project/code/encoder.c` | 正交编码器 + 卡尔曼滤波 |
 | IMU / 陀螺仪 | `project/code/imu_car_rc.c` | IMU660RC，含坐标系映射 |
 | 板间通讯 (接收无人机数据) | `project/code/car_board_comm.c` | UART1, 115200, AA55协议 |
-| 坐标变换 (无人机→车体) | `project/code/car_image.c` | Image_Solve() |
+| 视觉追踪状态机 / 坐标变换 | `project/code/car_image.c` | Image_Solve()、State0~4、盲冲/滑行 |
 | 无线串口调试 / 调参 | `project/code/wireless_uart.c` | UART2, SEEKFREE无线模块 |
 | 卡尔曼滤波器 | `project/code/kalman_filter.c` | 一维，用于编码器平滑 |
 | 测试程序 | `project/code/test.c` | 19个底盘运动测试 |
@@ -59,7 +59,8 @@ MCL_car/
 main() 主循环 (~1ms):              car_board_comm 解析8个float
   ├─ 解析无人机数据包               ├─ car_ground_pos (小车坐标)
   ├─ 无人机通讯看门狗 (1000ms超时停车) ├─ target_ground_pos (目标坐标)
-  ├─ Visual_Control_Loop() (20ms)  ├─ locked_state (目标锁定状态)
+  ├─ 收到新视觉包后调用 Visual_Control_Loop()
+  │                                    ├─ locked_state (目标锁定状态)
   ├─ 无线调参处理                     └─ imu_data (roll/pitch/yaw/z)
   └─ 同步PID参数
                                     
@@ -67,17 +68,17 @@ PIT_CH0 ISR (1ms 硬实时):          car_image → Image_Solve()
   ├─ IMU_Car_RC_Update_Loop()        坐标变换: 无人机系→车体系
   └─ Mecanum_Control_Loop()          输出: 距离 + 方位角
        ├─ 编码器读取 + 卡尔曼
-       ├─ 目标速度斜坡平滑        Visual_Control_Loop()
-       ├─ 偏航角串级PID             ├─ locked_state=3: 正常追踪
-       │   └─ 外环(角度) → 内环(角速度) ├─ locked_state=2: 滑行记忆
-       ├─ 麦轮逆运动学              └─ locked_state=0: 停车
+       ├─ 目标速度斜坡平滑
+       ├─ 偏航角串级PID
+       │   └─ 外环(角度) → 内环(角速度)
+       ├─ 麦轮逆运动学
        ├─ 4× 增量式PID (轮速)
        ├─ PWM等比例抗饱和
        └─ Motor_Set_Output() → 4路PWM+DIR
 
 安全机制:
   - 无人机断连 → 1000ms看门狗 → 强制停车
-  - 目标丢失 → 锁定后盲冲(dash)/未锁定滑行(coast)后停车
+  - 目标丢失 → 最近1000ms内有可靠双目标跟踪才允许盲冲，否则滑行(coast)后停车
   - IMU未校准 → 主循环阻塞，不解锁电机
 ```
 
@@ -116,7 +117,7 @@ PIT_CH0 ISR (1ms 硬实时):          car_image → Image_Solve()
 ### 错误处理
 - **初始化失败**: `while(1) { system_delay_ms(100); }` — 死循环等待
 - **通讯校验**: AA55头 + checksum 状态机 (car_board_comm.c)
-- **通讯超时**: 计数看门狗 → `EN=0; Mecanum_Stop();`
+- **通讯超时**: 计数看门狗 → `Chassis_Block(DISARM_COMM_LOST);`
 - **PID死区**: 误差 < 0.001 时清零积分并返回0
 - **电机死区**: 目标速度 < 0.01m/s 且误差 < 0.03 时输出0
 

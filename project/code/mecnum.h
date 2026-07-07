@@ -13,7 +13,7 @@
 #define TARGET_SPEED    0.75f     // 目标速度 (m/s)
 
 // 控制周期 (秒)
-#define CONTROL_DT      0.001f   
+#define CONTROL_DT      0.001f
 #define VISUAL_DT       0.020f
 
 // 【新增】加速度限制 (单位: m/s^2 和 rad/s^2)
@@ -38,7 +38,9 @@
 
 // 记忆/滑行参数
 #define COAST_HOLD_MS  600U      // 目标丢失后软滑行保持时间 (ms)
-#define LOCK_THRESHOLD 7         // 锁定所需连续有效跟踪帧数
+#define TRACK_MEMORY_MS 1000U    // 可靠跟踪置信度累计上限 (ms)
+#define TRACK_LOCK_THRESHOLD_MS 150U // 判定已有效锁定所需的可靠跟踪时长 (ms)
+#define TRACK_STEP_MAX_MS 20U    // 单帧可靠跟踪最多累计 20ms，避免慢包一帧涨满
 
 // 信标跳变检测
 #define JUMP_THRESHOLD_MIN      50.0f   // 跳变检测阈值下限 (cm)
@@ -50,7 +52,6 @@
 #define EDGE_DIST_CM            200.0f  // 信标距画面中心距离分界 (cm)，>此值视为边缘
 #define DASH_MS_MIN             200U    // 盲冲时长下限 (ms)
 #define DASH_MS_MAX             650U    // 盲冲时长上限 (ms)
-#define DASH_CNT_THRESHOLD      5
 
 #include "chassis_arm.h"
 

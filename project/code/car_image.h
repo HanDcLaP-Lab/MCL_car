@@ -35,7 +35,7 @@ extern float dist_out;
 
 // ================== 视觉跟踪 API ==================
 /**
- * @brief 视觉控制循环，建议在定时器中断中调用 (周期需与 VISUAL_DT 一致)
+ * @brief 视觉控制循环，由主循环在收到无人机视觉数据包后调用
  */
 void Visual_Control_Loop(void);
 
