@@ -13,7 +13,7 @@ volatile uint8_t  merge_coast_expired = 0;    // merge_coast ISR 到期标志，
 volatile uint8_t  visual_coast_expired = 0;   // visual_coast ISR 到期标志，防竞态清零后软滑行无限循环
 volatile uint32_t dash_end_time = 0;          // [重构] 融合盲冲绝对结束物理时间
 volatile uint32_t rush_cooldown_end_time = 0; // [重构] 防重入冷却绝对结束时间
-volatile uint8_t  dash_source = 0;            // dash 触发来源: 1=状态4融合盲冲, 2=状态1/2单目标丢失盲冲
+volatile uint8_t  dash_source = 0;            // dash 触发来源: 1=状态4融合盲冲, 2=历史保留(状态1/2入口已关闭)
 
 // ================== 视觉状态机共享静态变量 ==================
 static uint16_t is_edge = 0;
@@ -35,6 +35,8 @@ static void Visual_Track_Begin_Frame(void);
 static void Visual_Track_Refresh(void);
 static void Visual_Track_Decay(void);
 static void Visual_Track_Clear(void);
+static void Visual_Clear_Soft_Coast(void);
+static void Visual_Clear_Merge_Coast(void);
 static uint8_t Visual_Track_Is_Locked(void);
 static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float *prev_y, float prev_dist, uint8_t target_valid);
 
@@ -128,6 +130,16 @@ static void Visual_Track_Clear(void) {
     track_memory_started = 1;
 }
 
+static void Visual_Clear_Soft_Coast(void) {
+    visual_coast_end_time = 0;
+    visual_coast_expired = 0;
+}
+
+static void Visual_Clear_Merge_Coast(void) {
+    merge_coast_end_time = 0;
+    merge_coast_expired = 0;
+}
+
 static uint8_t Visual_Track_Is_Locked(void) {
     return (track_memory_ms >= TRACK_LOCK_THRESHOLD_MS);
 }
@@ -194,8 +206,13 @@ static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float
 static void State0_Handler(void) {
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     Visual_Track_Clear();
+    has_prev_target = 0;
     dash_end_time = 0;
-    visual_coast_end_time = 0;
+    dash_source = 0;
+    visual_last_vx = 0.0f;
+    visual_last_vy = 0.0f;
+    Visual_Clear_Soft_Coast();
+    Visual_Clear_Merge_Coast();
 }
 
 // 状态 1 或 2：单目标丢失
@@ -203,32 +220,16 @@ static void State0_Handler(void) {
 static void State12_Handler(uint8_t locked_state) {
     // 单目标丢失时按真实经过时间衰减锁定置信度，语义等价于旧 valid_track_cnt--。
     Visual_Track_Decay();
+    Visual_Clear_Merge_Coast();
 
-    if (Visual_Track_Is_Locked()) {
-        // 已锁定：触发不可中断盲冲，维持原方向直到 dash 到期
-        visual_coast_end_time = 0;
-        uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
-        if (dash_end_time == 0 && !is_cooldown) {
-            float speed = sqrtf(visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy);
-            if (speed < 0.1f) speed = 0.1f;
-            uint32_t coast_ms = (uint32_t)(prev_car_dist / 100.0f / speed * 1000.0f);
-            if (coast_ms < DASH_MS_MIN) coast_ms = DASH_MS_MIN;
-            if (coast_ms > DASH_MS_MAX) coast_ms = DASH_MS_MAX;
-            dash_end_time = sys_time_ms + coast_ms;
-            dash_source = 2;
-            Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
-        } else if (dash_end_time == 0) {
-            // 冷却期内：软滑行（含近距恢复检测），避免死循环空 dash
-            Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist, (locked_state == 2));
-        }
-    } else {
-        // 未锁定：软滑行（含近距恢复检测）
-        Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist, (locked_state == 2));
-    }
+    // state1/2 不再启动不可中断 dash，避免信标启动/闪烁造成固定到期刹停。
+    Visual_Coast_With_Recovery(has_prev_target, &prev_target_x, &prev_target_y, prev_car_dist, (locked_state == 2));
 }
 
 // 状态 3：双目标锁定 (正常追踪)
 static void State3_Handler(void) {
+    Visual_Clear_Soft_Coast();
+
     // 跳变滑行到期标记：到期时跳过跳变检测，直接接受新目标位置，打破死循环。
     // merge_coast_expired 由 1ms ISR 置位，解决 ISR 先于主循环清零 merge_coast_end_time
     // 导致 merge_expired 永不为真的竞态。标志仅一帧有效，消费后即清零。
@@ -245,7 +246,7 @@ static void State3_Handler(void) {
 
         if (dist_prev <= jump_thr) {
             // 目标回到原信标附近：退出滑行，恢复追踪
-            merge_coast_end_time = 0;
+            Visual_Clear_Merge_Coast();
             in_merge = 0;
         } else {
             // 仍是远处信标：维持原方向滑行，prev 不更新，死咬原始信标
@@ -256,7 +257,7 @@ static void State3_Handler(void) {
     }
 
     if (!in_merge) {
-        merge_coast_end_time = 0;
+        Visual_Clear_Merge_Coast();
 
         float dist = 0.0f, angle = 0.0f;
         Image_Solve(imu_car_rc_data.yaw, &dist, &angle);
@@ -311,11 +312,13 @@ static void State3_Handler(void) {
 
 // 状态 4：发生融合，进入盲冲/滑行判断
 static void State4_Handler(void) {
+    Visual_Clear_Merge_Coast();
+
     if (!is_edge) {
         uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
         // 在中心丢失，极大可能是近距离融合，执行硬实时绝对精确盲冲 (加入1秒防重入冷却)
         if (dash_end_time == 0 && Visual_Track_Is_Locked() && !is_cooldown) {
-            visual_coast_end_time = 0;
+            Visual_Clear_Soft_Coast();
             float speed_sq = visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy;
             float speed = sqrtf(speed_sq);
             if (speed < 0.1f) speed = 0.1f; // 防除零
@@ -326,6 +329,7 @@ static void State4_Handler(void) {
 
             if (duration_ms > 600) duration_ms = 600;
             if (duration_ms < 100) duration_ms = 100;
+            duration_ms += STATE4_DASH_EXTRA_MS;
             dash_end_time = sys_time_ms + (uint32_t)duration_ms;
             dash_source = 1;
 
@@ -415,11 +419,7 @@ void Visual_Control_Loop(void) {
     // 连续两帧全丢（state 0）：信标确定熄灭，强制中断一切滑行/盲冲
     if ((uint8_t)uart_data[5] == 0) {
         if (++zero_consecutive >= 2) {
-            dash_end_time = 0;
-            dash_source = 0;
-            visual_coast_end_time = 0;
-            merge_coast_end_time = 0;
-            Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+            State0_Handler();
             rush_sign = 0;
             return;
         }
@@ -442,7 +442,7 @@ void Visual_Control_Loop(void) {
     if (locked_state == 0) {
         // 仅在全丢时彻底清空历史跟踪记忆；coast 期间保留供跳变检测
         has_prev_target = 0;
-        merge_coast_end_time = 0;
+        Visual_Clear_Merge_Coast();
     }
 
     switch (locked_state) {

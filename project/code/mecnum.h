@@ -9,7 +9,7 @@
 #define CAR_L           0.10f   // 前后轮轴距的一半 (Half Wheel Base)
 #define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.028f   // 轮子半径
-#define PWM_MAX_M       7000.0f  // PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
+#define PWM_MAX_M       5000.0f  // 四轮 PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
 #define TARGET_SPEED    0.75f     // 目标速度 (m/s)
 
 // 控制周期 (秒)
@@ -17,12 +17,12 @@
 #define VISUAL_DT       0.020f
 
 // 【新增】加速度限制 (单位: m/s^2 和 rad/s^2)
-#define MAX_ACCEL_X  25.0f
-#define MAX_ACCEL_Y  25.0f
+#define MAX_ACCEL_X  15.0f
+#define MAX_ACCEL_Y  15.0f
 #define MAX_ACCEL_W  10.0f
 
 
-#define OUT_MAX 7000.0f
+#define OUT_MAX PWM_MAX_M       // 四轮速度环输出上限与实际 PWM 限幅保持一致
 // ================== 硬件引脚定义 ==================
 // 电机 PWM 通道定义
 #define MOTOR_LF_PWM    TCPWM_CH50_P18_7    // 左前 PWM
@@ -52,6 +52,7 @@
 #define EDGE_DIST_CM            200.0f  // 信标距画面中心距离分界 (cm)，>此值视为边缘
 #define DASH_MS_MIN             200U    // 盲冲时长下限 (ms)
 #define DASH_MS_MAX             650U    // 盲冲时长上限 (ms)
+#define STATE4_DASH_EXTRA_MS    100     // state4 融合盲冲在计算时长基础上固定增加 100ms
 
 #include "chassis_arm.h"
 
