@@ -9,7 +9,7 @@
 | **mecnum** | `mecnum.c` / `mecnum.h` | 麦轮底盘主控：速度设定、运动控制循环(1ms)、逆运动学、PWM缩放 |
 | **pid** | `pid.c` / `pid.h` | PID控制器：`PID_Calculate()` (位置式) + `PID_Calculate_Incremental()` (增量式) |
 | **encoder** | `encoder.c` / `encoder.h` | 4路正交编码器读取，转m/s，卡尔曼滤波平滑 |
-| **imu_car_rc** | `imu_car_rc.c` / `imu_car_rc.h` | IMU660RC驱动：偏航角/累计角度/角速度，坐标系映射宏 |
+| **imu_car_rc** | `imu_car_rc.c` / `imu_car_rc.h` | IMU660RC原始acc/gyro轮询 + Kalman/Mahony姿态融合：roll/pitch、偏航角/累计角度/角速度，坐标系映射宏 |
 | **car_board_comm** | `car_board_comm.c` / `car_board_comm.h` | UART1板间通讯：AA55协议解析，接收8个float (无人机位姿数据) |
 | **car_image** | `car_image.c` / `car_image.h` | 视觉追踪状态机：坐标系变换、双目标跟踪记忆、盲冲/滑行控制 |
 | **kalman_filter** | `kalman_filter.c` / `kalman_filter.h` | 一维卡尔曼滤波器 |

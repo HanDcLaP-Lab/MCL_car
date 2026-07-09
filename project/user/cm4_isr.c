@@ -389,7 +389,7 @@ void gpio_13_exti_isr()                  // 外部 GPIO_13 中断服务函数
 {
     if(exti_flag_get(P13_2))             // 检查是否是你设置的新引脚触发
     {
-        imu660rc_callback();             // 调用回调函数读取四元数和欧拉角
+        // IMU 当前使用 1ms 控制循环主动读取原始 acc/gyro，此处不再作为正常数据路径。
     }
 }
 
@@ -423,10 +423,6 @@ void gpio_17_exti_isr()                  // 外部 GPIO_17 中断服务函数
 
 void gpio_18_exti_isr()                  // 外部 GPIO_18 中断服务函数     
 {
-    // if(exti_flag_get(P18_5))             // 检查是否是 IMU660RC_INT2 引脚触发
-    // {
-    //     imu660rc_callback();             // 调用回调函数读取四元数和欧拉角
-    // }
 
 
 }

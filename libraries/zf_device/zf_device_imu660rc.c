@@ -516,7 +516,7 @@ uint8 imu660rc_init(imu660rc_quarternion_rate_config quarternion_rate)
         }
         
         // 设置传感器模式，设置为高精度模式以及输出速率
-        imu660rc_write_register(IMU660RC_CTRL1, 0x15);
+        imu660rc_write_register(IMU660RC_CTRL1, 0x18);
         imu660rc_write_register(IMU660RC_CTRL2, 0x18);
         
         // 开启LPF1滤波器

@@ -228,5 +228,5 @@ void wireless_uart_output_commu(void){
 }
 
 void print_imu(void){
-    printf("%f,%f,%f,%f\n",imu_car_rc_data.pitch , imu_car_rc_data.roll , imu_car_rc_data.yaw , imu_car_rc_data.yaw_total);
+    printf("%.2f,%.2f,%.2f\r\n", imu_car_rc_data.roll, imu_car_rc_data.pitch, imu_car_rc_data.yaw);
 }

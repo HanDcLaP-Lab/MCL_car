@@ -294,6 +294,8 @@ Current scope: the dirty working tree of both `MCL_car` and `../drone`. This sec
 
 #### CR-27. MCL_car yaw hold still targets global zero, not a captured heading
 
+- Status:
+  - Resolved in the current working tree by switching `imu_car_rc` to raw-gyro yaw integration. `yaw_total` now resets to `0.0f` after gyro-bias calibration, so yaw hold keeps the startup heading instead of chasing the IMU660RC internal Euler yaw.
 - Evidence:
   - First IMU update initializes `yaw_total` to the current yaw: `project/code/imu_car_rc.c:40-60`.
   - Yaw hold computes `0.0f - imu_car_rc_data.yaw_total`: `project/code/mecnum.c:196-208`.
@@ -304,6 +306,8 @@ Current scope: the dirty working tree of both `MCL_car` and `../drone`. This sec
 
 #### CR-28. IMU car pitch assignment can leave stale values
 
+- Status:
+  - Resolved in the current working tree by deriving `roll/pitch` every frame from raw mapped accelerometer data. These values are debug-facing; yaw control uses raw mapped gyro integration.
 - Evidence:
   - `imu_car_rc_data.pitch` is assigned only when `imu660rc_roll > 90` or `< -90`: `project/code/imu_car_rc.c:22-25`.
   - For the common `[-90, 90]` range there is no `else`, so the previous pitch value remains.
@@ -406,6 +410,8 @@ Current scope: the dirty working tree of both `MCL_car` and `../drone`. This sec
 
 ### 7. Yaw hold target appears to be global 0 degrees, not current heading
 
+- Status:
+  - Resolved in the current working tree: `imu_car_rc` now disables IMU660RC internal Euler yaw and resets `yaw_total` to `0.0f` after raw-gyro zero-bias calibration, making yaw hold relative to startup heading.
 - Evidence:
   - `project/code/imu_car_rc.c:55-56` initializes `yaw_total` to the first `new_yaw`.
   - `project/code/mecnum.c:452` computes `yaw_error = 0.0f - imu_car_rc_data.yaw_total`.
@@ -427,6 +433,8 @@ Current scope: the dirty working tree of both `MCL_car` and `../drone`. This sec
 
 ### 9. IMU driver globals are updated in one interrupt context and read in another
 
+- Status:
+  - Resolved for the normal IMU path in the current working tree: IMU660RC quaternion/EXTI mode is disabled, and the 1ms PIT path polls raw acc/gyro before deriving `imu_car_rc_data`.
 - Evidence:
   - `libraries/zf_device/zf_device_imu660rc.c:79-82` defines IMU globals without `volatile`.
   - `libraries/zf_device/zf_device_imu660rc.c:392-394` updates quaternion/euler data from the GPIO interrupt callback.
@@ -471,6 +479,8 @@ Current scope: the dirty working tree of both `MCL_car` and `../drone`. This sec
 
 ### 13. IMU `pitch` and calibration semantics are weak
 
+- Status:
+  - Resolved in the current working tree: `roll/pitch` are recomputed every frame from raw mapped accelerometer data, and `is_calibrated` is set only after a 500ms raw-gyro zero-bias window.
 - Evidence:
   - `project/code/imu_car_rc.c:24-25` assigns `pitch` only when `imu660rc_roll` is outside +/-90 degrees.
   - `project/code/imu_car_rc.c:68` sets `is_calibrated = 1` after the first update.

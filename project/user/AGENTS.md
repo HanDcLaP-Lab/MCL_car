@@ -21,7 +21,7 @@
 7. Mecanum_Init()                       // 麦轮底盘 (GPIO/PWM/PID)
 8. wireless_uart_init_()                // 无线串口
 9. seekfree_assistant_interface_init()  // 无线调参协议
-10. pit_ms_init(PIT_CH1, 25)            // 25ms 定时器 (无线调试输出)
+10. pit_ms_init(PIT_CH1, 200)           // 200ms 定时器 (主循环调试打印触发)
 11. pit_ms_init(PIT_CH0, 1)            // 1ms 定时器 (主控制循环)
 12. 进入主循环 for(;;)                   // 校准完成由 1ms ISR 自动清 DISARM_UNCALIBRATED 位解锁
 ```
@@ -30,14 +30,14 @@
 
 | 中断 | 周期/触发 | 处理内容 |
 |------|-----------|----------|
-| **PIT_CH0** | 1ms | ⚡ 硬实时：`IMU_Car_RC_Update_Loop()` + `Mecanum_Control_Loop()` |
-| **PIT_CH1** | 25ms | 无线调试输出：`wireless_uart_output_coast()` |
+| **PIT_CH0** | 1ms | ⚡ 硬实时：轮询 IMU660RC 原始 acc/gyro，更新 Kalman/Mahony 姿态 + `Mecanum_Control_Loop()` |
+| **PIT_CH1** | 200ms | 置位主循环调试打印标志，避免在中断内阻塞输出 |
 | **PIT_CH2** | 未初始化 | 预留，原用于视觉控制周期 |
 | **UART0** | RX中断 | 调试串口 `debug_interrupr_handler()` |
 | **UART1** | RX中断 | 板间通讯：接收无人机数据写入 `board_rx_fifo` |
 | **UART2** | RX中断 | 无线模块：`wireless_module_uart_handler()` |
 | **UART3-6** | - | 空占位 |
-| **GPIO_13** | EXTI | IMU660RC 数据就绪回调 `imu660rc_callback()` |
+| **GPIO_13** | EXTI | 预留；当前 IMU 使用 PIT_CH0 主动读取原始 acc/gyro 并在软件中融合 |
 | **GPIO_0-23** | - | 大部分为空占位 |
 
 ## 主循环逻辑 (for(;;))

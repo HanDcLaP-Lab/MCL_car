@@ -41,7 +41,7 @@ MCL_car/
 | 底盘运动控制 / 麦轮解算 | `project/code/mecnum.c` | 1ms控制环、逆运动学、轮速PID |
 | PID 控制器 | `project/code/pid.c` | 增量式 + 位置式 PID |
 | 编码器读取 (4个电机) | `project/code/encoder.c` | 正交编码器 + 卡尔曼滤波 |
-| IMU / 陀螺仪 | `project/code/imu_car_rc.c` | IMU660RC，含坐标系映射 |
+| IMU / 陀螺仪 | `project/code/imu_car_rc.c` | IMU660RC，Kalman/Mahony 姿态融合和坐标系映射 |
 | 板间通讯 (接收无人机数据) | `project/code/car_board_comm.c` | UART1, 115200, AA55协议 |
 | 视觉追踪状态机 / 坐标变换 | `project/code/car_image.c` | Image_Solve()、State0~4、盲冲/滑行 |
 | 无线串口调试 / 调参 | `project/code/wireless_uart.c` | UART2, SEEKFREE无线模块 |
@@ -120,6 +120,11 @@ PIT_CH0 ISR (1ms 硬实时):          car_image → Image_Solve()
 - **通讯超时**: 计数看门狗 → `Chassis_Block(DISARM_COMM_LOST);`
 - **PID死区**: 误差 < 0.001 时清零积分并返回0
 - **电机死区**: 目标速度 < 0.01m/s 且误差 < 0.03 时输出0
+
+### 调试打印
+- **有线打印**: 使用 `printf()`。
+- **无线打印**: 使用 `wireless_uart_*()` / `wireless_uart` 开头的函数。
+- **数值类格式**: 数值之间用 `,` 分隔，结尾使用 `\r\n`，例如 `"dat1,dat2,dat3\r\n"`。
 
 ### 坐标系 (来自 README.md)
 ```

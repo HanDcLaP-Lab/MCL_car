@@ -53,7 +53,7 @@ volatile uint32_t board_rx_ok_debug = 0;
 volatile uint32_t visual_loop_count_debug = 0;
 volatile uint32_t visual_loop_dt_debug = 0;
 volatile uint32_t visual_loop_max_dt_debug = 0;
-volatile uint8_t  board_comm_debug_pending = 0;   // [移出中断] pit0_ch1(500ms) 置位，主循环消费并发送无线调试打印
+volatile uint8_t  board_comm_debug_pending = 0;   // [移出中断] pit0_ch1(200ms) 置位，主循环消费并发送调试打印
 //int mv_en = 0;
 void Wireless_Update(uint8_t ch, float val);
 int main(void)
@@ -175,7 +175,7 @@ int main(void)
             //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_rc_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
             //Current_speed_display();
             //wireless_uart_output_motor();
-            //print_imu();
+            print_imu();
             //wireless_uart_output_commu();
             // printf("%.2f," , uart_data[0]);
             // printf("%.2f," , uart_data[1]);
