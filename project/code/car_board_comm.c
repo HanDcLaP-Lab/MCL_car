@@ -17,6 +17,11 @@ volatile uint32_t board_rx_last_dt_ms = 0;
 volatile uint32_t board_rx_max_dt_ms = 0;
 volatile uint32_t board_rx_fifo_max_used = 0;
 volatile uint32_t board_rx_fifo_corrupt_count = 0;   // [并发加固] fifo_used 越界(size被竞态写坏)被清空的次数
+volatile uint32_t board_rx_fifo_write_fail_count = 0;
+volatile uint8_t board_rx_state4_pending = 0;
+volatile uint8_t board_rx_stop_pending = 0;
+static float board_rx_state4_frame[8] = {0};
+static float board_rx_latest_frame[8] = {0};
 
 // 接收状态机枚举
 typedef enum {
@@ -42,6 +47,39 @@ void Board_Comm_Init(void)
     uart_rx_interrupt(BOARD_UART, 1); 
 }
 
+uint8_t Board_Comm_Consume_State4_Event(void)
+{
+    if (!board_rx_state4_pending) return 0;
+
+    board_rx_state4_pending = 0;
+    for (int i = 0; i < 8; i++) {
+        uart_data[i] = board_rx_state4_frame[i];
+    }
+    return 1;
+}
+
+uint8_t Board_Comm_Consume_Stop_Event(void)
+{
+    uint8_t stop_pending = board_rx_stop_pending;
+    board_rx_stop_pending = 0;
+    if (stop_pending) {
+        board_rx_state4_pending = 0;
+    }
+    return stop_pending;
+}
+
+void Board_Comm_Discard_State4_Event(void)
+{
+    board_rx_state4_pending = 0;
+}
+
+void Board_Comm_Restore_Latest_Frame(void)
+{
+    for (int i = 0; i < 8; i++) {
+        uart_data[i] = board_rx_latest_frame[i];
+    }
+}
+
 static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
 {
     extern volatile uint32_t sys_time_ms;
@@ -53,8 +91,13 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
     static uint32_t last_ok_time_ms = 0;
     
     uint8_t read_byte;
+    uint8_t state4_trailing_frames = 0;
     uint32_t len;
     uint32_t primask;
+
+    // 以下两个标志描述“本次 FIFO 排空批次”，主循环会在本轮立即消费。
+    board_rx_state4_pending = 0;
+    board_rx_stop_pending = 0;
 
     // [并发加固] board_rx_fifo 的 fifo->size 被 uart1_isr(写) 与本函数(读) 跨上下文
     // 非原子读改写。竞态丢更新会让 size 漂移；而 fifo_used()=max-size 是无符号运算，
@@ -148,7 +191,32 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                         // 校验完全通过，赋值
                         for (int i = 0; i < 8; i++) {
                             uart_data[i] = temp_pack.f_data[i];
+                            board_rx_latest_frame[i] = temp_pack.f_data[i];
                         }
+
+                        uint8_t parsed_state = (uint8_t)temp_pack.f_data[5];
+                        uint8_t parsed_running = (temp_pack.f_data[6] >= 0.5f);
+                        if (!parsed_running) {
+                            // 同一批次内停止优先，后续 car_en=1 不得覆盖该事件。
+                            board_rx_stop_pending = 1;
+                            board_rx_state4_pending = 0;
+                        } else if (!board_rx_stop_pending) {
+                            if (parsed_state == 4U) {
+                                for (int i = 0; i < 8; i++) {
+                                    board_rx_state4_frame[i] = temp_pack.f_data[i];
+                                }
+                                board_rx_state4_pending = 1;
+                                state4_trailing_frames = 0;
+                            } else if (parsed_state == 0U) {
+                                // state0 表示后续安全状态已经否定了先前短 state4。
+                                board_rx_state4_pending = 0;
+                            } else if (board_rx_state4_pending) {
+                                if (++state4_trailing_frames > BOARD_STATE4_MAX_TRAILING_FRAMES) {
+                                    board_rx_state4_pending = 0;
+                                }
+                            }
+                        }
+
                         uint32_t now = sys_time_ms;
                         if (last_ok_time_ms != 0) {
                             board_rx_last_dt_ms = now - last_ok_time_ms;

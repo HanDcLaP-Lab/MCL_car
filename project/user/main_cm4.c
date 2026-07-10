@@ -114,9 +114,12 @@ int main(void)
             drone_timeout_cnt = 0; // 成功收到无人机数据，喂狗清零
             drone_timeout_debug = drone_timeout_cnt;
 
+            uint8_t stop_event = Board_Comm_Consume_Stop_Event();
+
             // 无人机下传 car_en: 0=飞机停止/锁定, 1=正常飞行。
             // 只置/清 DISARM_DRONE_STOPPED，不覆盖人工急停或通信看门狗。
-            uint8_t drone_running = (uart_data[6] >= 0.5f);
+            // 同一 FIFO 批次中只要曾出现 car_en=0，本轮停止优先；下一批新帧才允许恢复。
+            uint8_t drone_running = (!stop_event && uart_data[6] >= 0.5f);
             if (drone_running) {
                 Chassis_Unblock(DISARM_DRONE_STOPPED);
             } else {
@@ -133,7 +136,17 @@ int main(void)
             }
             last_visual_time_ms = now;
             visual_loop_count_debug++;
-            Visual_Control_Loop();
+            if (drone_running) {
+                // 短 state4 使用同帧完整坐标快照；若无事件则 uart_data 保持最新普通帧。
+                uint8_t state4_consumed = Board_Comm_Consume_State4_Event();
+                Visual_Control_Loop();
+                if (state4_consumed) {
+                    Board_Comm_Restore_Latest_Frame();
+                }
+            } else {
+                // 停止事件优先后，丢弃同批次视觉事件，避免后续补执行陈旧 dash。
+                Board_Comm_Discard_State4_Event();
+            }
         } else {
             drone_timeout_cnt++;
             // 主循环中有 system_delay_ms(1)，因此每次自增大约是 1ms

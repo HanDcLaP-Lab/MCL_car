@@ -50,9 +50,24 @@
 
 // 边缘判定
 #define EDGE_DIST_CM            200.0f  // 信标距画面中心距离分界 (cm)，>此值视为边缘
-#define DASH_MS_MIN             200U    // 盲冲时长下限 (ms)
-#define DASH_MS_MAX             650U    // 盲冲时长上限 (ms)
+#define DASH_MS_MIN             200U    // 加上固定补偿后的盲冲时长下限 (ms)
+#define DASH_MS_MAX             700U    // 加上固定补偿后的盲冲时长上限 (ms)
 #define STATE4_DASH_EXTRA_MS    100     // state4 融合盲冲在计算时长基础上固定增加 100ms
+#define DASH_HISTORY_SIZE       6U      // state4 盲冲使用最近多帧 state3 位置做等速拟合
+#define DASH_HISTORY_MAX_AGE_MS 180U    // 只使用足够新的历史帧，避免旧目标污染融合盲冲
+#define DASH_HISTORY_MIN_SAMPLES 3U     // 等速拟合至少需要的有效样本数
+#define DASH_HISTORY_SAMPLE_JUMP_BASE_CM 12.0f // 相邻帧允许的基础视觉抖动 (cm)
+#define DASH_HISTORY_MAX_REL_SPEED_CM_S 200.0f // 相邻帧相对位置变化速度上限 (cm/s)
+#define DASH_HISTORY_MAX_POS_RMS_CM 8.0f // XY 等速拟合允许的加权均方根残差 (cm)
+#define DASH_HISTORY_MAX_DIST_RMS_CM 6.0f // 距离等速拟合允许的加权均方根残差 (cm)
+#define DASH_HISTORY_MAX_DIR_CHANGE_COS 0.94f // 拟合方向相对上一速度方向最多改变约20度
+#define DASH_HISTORY_MIN_CLOSING_SPEED_MPS 0.20f // 可信接近速度下限 (m/s)
+#define DASH_HISTORY_MAX_CLOSING_SPEED_MPS 1.20f // 可信接近速度上限 (m/s)
+#define DASH_HISTORY_MAX_CLOSING_DIFF_MPS 0.30f // 向量/标量拟合接近速度最大差异 (m/s)
+#define DASH_HISTORY_DIST_GROW_LIMIT_CM 3.0f // 仅容许少量测距噪声使外推距离增大
+#define DASH_HISTORY_DIST_SHRINK_LIMIT_CM 15.0f // 拟合距离最多允许比最新距离小15cm，抑制测距噪声导致早停
+#define DASH_DURATION_SPEED_MIN_MPS 0.65f // 观测接近速度参与计时时的下限
+#define DASH_DURATION_SPEED_MAX_MPS 0.85f // 观测接近速度参与计时时的上限
 
 #include "chassis_arm.h"
 

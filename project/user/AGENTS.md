@@ -43,10 +43,10 @@
 ## 主循环逻辑 (for(;;))
 
 ```
-1. Parse_Board_Uart_Data()              // 解析无人机数据包
-2. 无人机急停判断 (uart_data[6] car_en)  // 只维护 DISARM_DRONE_STOPPED，不覆盖人工急停/通讯看门狗
+1. Parse_Board_Uart_Data()              // 排空FIFO并保留最新帧，锁存批次state4/stop事件
+2. 无人机急停判断                       // 批次内任一car_en=0优先，下一批新帧才允许恢复
 3. 无人机通讯看门狗:
-   - 收到数据 → 喂狗清零，Chassis_Unblock(DISARM_COMM_LOST)，跑 Visual_Control_Loop()
+   - 收到数据 → 喂狗清零，依次处理stop、state4完整快照或最新普通帧
    - 超时1000ms → Chassis_Block(DISARM_COMM_LOST)，卡住计数器
    - 注意：重连只清 COMM_LOST 位，人工急停(DISARM_MANUAL)保持 → 不会自动跑起来
 4. seekfree_assistant_data_analysis()   // 无线调参数据处理
@@ -59,7 +59,10 @@
 
 | 变量 | 类型 | 用途 |
 |------|------|------|
-| `board_rx_complete_flag` | `volatile uint8_t` | 无人机数据包接收完成标志 (ISR设置) |
+| `board_rx_complete_flag` | `volatile uint8_t` | 本次解析至少收到一个合法无人机数据包 |
+| `board_rx_state4_pending` | `volatile uint8_t` | 本批次存在尚未消费的完整state4快照 |
+| `board_rx_stop_pending` | `volatile uint8_t` | 本批次任一合法帧出现car_en=0 |
+| `board_rx_fifo_write_fail_count` | `volatile uint32_t` | UART ISR因FIFO满/忙写入失败计数 |
 | `temp_rx_dat` | `uint8_t` | UART1 单字节接收缓冲 |
 | `drone_timeout_cnt` | `static uint32_t` | 无人机通讯看门狗计数器 (main loop内) |
 
@@ -101,7 +104,7 @@
 | 文件 | 职责 | 行数(估) |
 |------|------|----------|
 | `chassis_arm.c/h` | 使能状态机：disarm_flags + Block/Unblock + 停车清理 | ~70 |
-| `car_image.c/h` | 视觉跟踪：State0~4_Handler + 盲冲/滑行 + Image_Solve | ~320 |
+| `car_image.c/h` | 视觉跟踪：State0~4_Handler + 盲冲/滑行 + 多帧可信拟合 + Image_Solve | ~770 |
 | `mecnum.c/h` | 底层运动控制：电机引脚 + 逆运动学 + 轮速PID + 偏航串级 | ~304 |
 
 依赖方向: `mecnum.c` → `chassis_arm.c` → `car_image.c`（mecnum 调用 Visual_Brake_Check；chassis_arm 调用 Visual_State_Reset）。

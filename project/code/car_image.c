@@ -21,9 +21,22 @@ static uint32_t track_memory_ms = 0;
 static uint32_t track_memory_last_ms = 0;
 static uint32_t track_memory_step_ms = 0;
 static uint8_t  track_memory_started = 0;
+static uint8_t  zero_consecutive = 0;
 static float    prev_target_x = 0.0f, prev_target_y = 0.0f;
 static uint8_t  has_prev_target = 0;
 static float    prev_car_dist = 0.0f;
+
+typedef struct {
+    float pos_x;
+    float pos_y;
+    float dist_cm;
+    uint32_t stamp_ms;
+} Dash_History_Sample_t;
+
+static Dash_History_Sample_t dash_history[DASH_HISTORY_SIZE];
+static uint8_t dash_history_head = 0;
+static uint8_t dash_history_count = 0;
+static volatile uint8_t dash_history_clear_pending = 1;
 
 // ================== 静态函数前置声明 ==================
 static void State0_Handler(void);
@@ -39,11 +52,18 @@ static void Visual_Clear_Soft_Coast(void);
 static void Visual_Clear_Merge_Coast(void);
 static uint8_t Visual_Track_Is_Locked(void);
 static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float *prev_y, float prev_dist, uint8_t target_valid);
+static void Visual_Dash_History_Clear(void);
+static void Visual_Dash_History_Apply_Pending_Clear(void);
+static uint8_t Visual_Get_Relative_Earth(float *earth_x, float *earth_y);
+static uint8_t Visual_Earth_To_Command_Direction(float earth_x, float earth_y, float car_yaw, float *dir_x, float *dir_y);
+static void Visual_Dash_History_Push(float earth_x, float earth_y);
+static uint8_t Visual_Dash_History_Get_Estimate(float *vx, float *vy, float *dist_cm, float *closing_speed_mps);
 
 // ================== 现有函数 (不变) ==================
 
 void Image_Init(void) {
     memset(uart_data, 0, sizeof(uart_data));
+    Visual_Dash_History_Clear();
 }
 
 void Image_Solve(float car_yaw, float *dist, float *angle) {
@@ -128,6 +148,7 @@ static void Visual_Track_Clear(void) {
     track_memory_last_ms = sys_time_ms;
     track_memory_step_ms = 0;
     track_memory_started = 1;
+    Visual_Dash_History_Clear();
 }
 
 static void Visual_Clear_Soft_Coast(void) {
@@ -142,6 +163,264 @@ static void Visual_Clear_Merge_Coast(void) {
 
 static uint8_t Visual_Track_Is_Locked(void) {
     return (track_memory_ms >= TRACK_LOCK_THRESHOLD_MS);
+}
+
+static void Visual_Dash_History_Clear(void) {
+    // 该函数也会由 1ms ISR 间接调用。逐飞库的全局中断开关不支持安全嵌套，
+    // 因此 ISR 仅发布清空请求，环形缓冲区始终由主循环单写。
+    dash_history_clear_pending = 1;
+}
+
+static void Visual_Dash_History_Apply_Pending_Clear(void) {
+    if (dash_history_clear_pending) {
+        // 先消费请求再清空；若 ISR 在后两句之间再次置位，请求仍会保留到下一次处理。
+        dash_history_clear_pending = 0;
+        dash_history_head = 0;
+        dash_history_count = 0;
+    }
+}
+
+static uint8_t Visual_Get_Relative_Earth(float *earth_x, float *earth_y) {
+    float rel_drone_x = uart_data[2] - uart_data[0];
+    float rel_drone_y = uart_data[3] - uart_data[1];
+    float dist_cm = sqrtf(rel_drone_x * rel_drone_x + rel_drone_y * rel_drone_y);
+    if (dist_cm <= 0.001f) {
+        return 0;
+    }
+
+    float yaw_rad = uart_data[4] * ((float)M_PI / 180.0f);
+    float cosy = cosf(yaw_rad);
+    float siny = sinf(yaw_rad);
+    *earth_x = rel_drone_x * cosy - rel_drone_y * siny;
+    *earth_y = rel_drone_x * siny + rel_drone_y * cosy;
+    return 1;
+}
+
+static uint8_t Visual_Earth_To_Command_Direction(float earth_x, float earth_y, float car_yaw, float *dir_x, float *dir_y) {
+    float dist_cm = sqrtf(earth_x * earth_x + earth_y * earth_y);
+    if (dist_cm <= 0.001f) {
+        return 0;
+    }
+
+    float yaw_rad = car_yaw * ((float)M_PI / 180.0f);
+    float cosy = cosf(yaw_rad);
+    float siny = sinf(yaw_rad);
+    float car_x = earth_x * cosy + earth_y * siny;
+    float car_y = earth_x * siny - earth_y * cosy;
+
+    float offset_rad = YAW_OFFSET * ((float)M_PI / 180.0f);
+    float cos_offset = cosf(offset_rad);
+    float sin_offset = sinf(offset_rad);
+    float command_x = car_x * cos_offset - car_y * sin_offset;
+    float command_y = car_x * sin_offset + car_y * cos_offset;
+    float command_norm = sqrtf(command_x * command_x + command_y * command_y);
+    if (command_norm <= 0.001f) {
+        return 0;
+    }
+
+    *dir_x = command_x / command_norm;
+    *dir_y = command_y / command_norm;
+    return 1;
+}
+
+static void Visual_Dash_History_Push(float earth_x, float earth_y) {
+    Visual_Dash_History_Apply_Pending_Clear();
+
+    Dash_History_Sample_t current;
+    current.pos_x = earth_x;
+    current.pos_y = earth_y;
+    current.dist_cm = sqrtf(earth_x * earth_x + earth_y * earth_y);
+    current.stamp_ms = sys_time_ms;
+    if (current.dist_cm <= 0.001f) {
+        return;
+    }
+
+    uint8_t head = dash_history_head;
+    uint8_t count = dash_history_count;
+
+    if (count > 0) {
+        uint8_t latest_idx = (uint8_t)((head + DASH_HISTORY_SIZE - 1U) % DASH_HISTORY_SIZE);
+        const Dash_History_Sample_t *latest = &dash_history[latest_idx];
+        uint32_t dt_ms = current.stamp_ms - latest->stamp_ms;
+
+        if (dt_ms == 0U) {
+            dash_history[latest_idx] = current;
+            return;
+        }
+
+        uint8_t reset_history = (dt_ms > DASH_HISTORY_MAX_AGE_MS);
+        if (!reset_history) {
+            float dx = current.pos_x - latest->pos_x;
+            float dy = current.pos_y - latest->pos_y;
+            float max_delta = DASH_HISTORY_SAMPLE_JUMP_BASE_CM +
+                              DASH_HISTORY_MAX_REL_SPEED_CM_S * ((float)dt_ms * 0.001f);
+            if (dx * dx + dy * dy > max_delta * max_delta) {
+                reset_history = 1;
+            }
+        }
+
+        if (reset_history) {
+            head = 0;
+            count = 0;
+        }
+    }
+
+    dash_history[head] = current;
+    head++;
+    if (head >= DASH_HISTORY_SIZE) head = 0;
+    if (count < DASH_HISTORY_SIZE) count++;
+    dash_history_head = head;
+    dash_history_count = count;
+}
+
+static uint8_t Visual_Dash_History_Get_Estimate(float *vx, float *vy, float *dist_cm, float *closing_speed_mps) {
+    Visual_Dash_History_Apply_Pending_Clear();
+
+    Dash_History_Sample_t history_snapshot[DASH_HISTORY_SIZE];
+    uint8_t snapshot_head = dash_history_head;
+    uint8_t snapshot_count = dash_history_count;
+    for (uint8_t i = 0; i < DASH_HISTORY_SIZE; i++) {
+        history_snapshot[i] = dash_history[i];
+    }
+
+    if (snapshot_count < DASH_HISTORY_MIN_SAMPLES) {
+        return 0;
+    }
+
+    uint32_t now_ms = sys_time_ms;
+    uint8_t latest_idx = (uint8_t)((snapshot_head + DASH_HISTORY_SIZE - 1U) % DASH_HISTORY_SIZE);
+    const Dash_History_Sample_t *latest = &history_snapshot[latest_idx];
+    uint32_t latest_stamp = latest->stamp_ms;
+    float latest_dist = latest->dist_cm;
+
+    float w_sum = 0.0f;
+    float t_sum = 0.0f;
+    float tt_sum = 0.0f;
+    float x_sum = 0.0f;
+    float y_sum = 0.0f;
+    float d_sum = 0.0f;
+    float xt_sum = 0.0f;
+    float yt_sum = 0.0f;
+    float dt_sum = 0.0f;
+    uint8_t used_count = 0;
+
+    for (uint8_t offset = 0; offset < snapshot_count; offset++) {
+        uint8_t idx = (uint8_t)((snapshot_head + DASH_HISTORY_SIZE - 1U - offset) % DASH_HISTORY_SIZE);
+        const Dash_History_Sample_t *sample = &history_snapshot[idx];
+        uint32_t age_ms = now_ms - sample->stamp_ms;
+
+        if (age_ms > DASH_HISTORY_MAX_AGE_MS) {
+            break;
+        }
+
+        float t_sec = -((float)(latest_stamp - sample->stamp_ms) * 0.001f);
+        float weight = (float)(DASH_HISTORY_SIZE - offset);
+        w_sum += weight;
+        t_sum += weight * t_sec;
+        tt_sum += weight * t_sec * t_sec;
+        x_sum += weight * sample->pos_x;
+        y_sum += weight * sample->pos_y;
+        d_sum += weight * sample->dist_cm;
+        xt_sum += weight * t_sec * sample->pos_x;
+        yt_sum += weight * t_sec * sample->pos_y;
+        dt_sum += weight * t_sec * sample->dist_cm;
+        used_count++;
+    }
+
+    if (used_count < DASH_HISTORY_MIN_SAMPLES || w_sum <= 0.0f) {
+        return 0;
+    }
+
+    float denom = w_sum * tt_sum - t_sum * t_sum;
+    if (fabsf(denom) < 0.000001f) {
+        return 0;
+    }
+
+    float slope_x = (w_sum * xt_sum - t_sum * x_sum) / denom;
+    float slope_y = (w_sum * yt_sum - t_sum * y_sum) / denom;
+    float slope_dist = (w_sum * dt_sum - t_sum * d_sum) / denom;
+    float intercept_x = (x_sum - slope_x * t_sum) / w_sum;
+    float intercept_y = (y_sum - slope_y * t_sum) / w_sum;
+    float intercept_dist = (d_sum - slope_dist * t_sum) / w_sum;
+    float pos_residual_sum = 0.0f;
+    float dist_residual_sum = 0.0f;
+
+    for (uint8_t offset = 0; offset < used_count; offset++) {
+        uint8_t idx = (uint8_t)((snapshot_head + DASH_HISTORY_SIZE - 1U - offset) % DASH_HISTORY_SIZE);
+        const Dash_History_Sample_t *sample = &history_snapshot[idx];
+        float t_sec = -((float)(latest_stamp - sample->stamp_ms) * 0.001f);
+        float weight = (float)(DASH_HISTORY_SIZE - offset);
+        float fit_x = intercept_x + slope_x * t_sec;
+        float fit_y = intercept_y + slope_y * t_sec;
+        float fit_dist = intercept_dist + slope_dist * t_sec;
+        float err_x = sample->pos_x - fit_x;
+        float err_y = sample->pos_y - fit_y;
+        float err_dist = sample->dist_cm - fit_dist;
+        pos_residual_sum += weight * (err_x * err_x + err_y * err_y);
+        dist_residual_sum += weight * err_dist * err_dist;
+    }
+
+    float pos_rms = sqrtf(pos_residual_sum / w_sum);
+    float dist_rms = sqrtf(dist_residual_sum / w_sum);
+    if (pos_rms > DASH_HISTORY_MAX_POS_RMS_CM || dist_rms > DASH_HISTORY_MAX_DIST_RMS_CM) {
+        return 0;
+    }
+
+    float now_t_sec = (float)(now_ms - latest_stamp) * 0.001f;
+    float est_x = intercept_x + slope_x * now_t_sec;
+    float est_y = intercept_y + slope_y * now_t_sec;
+    float est_fit_dist = intercept_dist + slope_dist * now_t_sec;
+    float est_dist = sqrtf(est_x * est_x + est_y * est_y);
+
+    if (est_dist < 0.001f || est_fit_dist < 0.001f) {
+        return 0;
+    }
+
+    float scalar_closing_speed = -slope_dist * 0.01f;
+    float vector_closing_speed = -(est_x * slope_x + est_y * slope_y) / est_dist * 0.01f;
+    if (scalar_closing_speed < DASH_HISTORY_MIN_CLOSING_SPEED_MPS ||
+        scalar_closing_speed > DASH_HISTORY_MAX_CLOSING_SPEED_MPS ||
+        vector_closing_speed < DASH_HISTORY_MIN_CLOSING_SPEED_MPS ||
+        vector_closing_speed > DASH_HISTORY_MAX_CLOSING_SPEED_MPS ||
+        fabsf(scalar_closing_speed - vector_closing_speed) > DASH_HISTORY_MAX_CLOSING_DIFF_MPS) {
+        return 0;
+    }
+
+    float direction_x = 0.0f;
+    float direction_y = 0.0f;
+    if (!Visual_Earth_To_Command_Direction(est_x, est_y, imu_car_rc_data.yaw, &direction_x, &direction_y)) {
+        return 0;
+    }
+
+    float last_speed = sqrtf(visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy);
+    if (last_speed > 0.1f) {
+        float dir_cos = (direction_x * visual_last_vx + direction_y * visual_last_vy) / last_speed;
+        if (dir_cos < DASH_HISTORY_MAX_DIR_CHANGE_COS) {
+            return 0;
+        }
+    }
+
+    float max_fit_dist = latest_dist + DASH_HISTORY_DIST_GROW_LIMIT_CM;
+    float min_fit_dist = latest_dist - DASH_HISTORY_DIST_SHRINK_LIMIT_CM;
+    if (min_fit_dist < 1.0f) {
+        min_fit_dist = 1.0f;
+    }
+    if (est_fit_dist > max_fit_dist) {
+        est_fit_dist = max_fit_dist;
+    } else if (est_fit_dist < min_fit_dist) {
+        est_fit_dist = min_fit_dist;
+    }
+
+    // 拟合期间若 ISR 请求了状态清理，放弃本次旧历史结果。
+    if (dash_history_clear_pending) {
+        return 0;
+    }
+
+    *vx = TARGET_SPEED * direction_x;
+    *vy = TARGET_SPEED * direction_y;
+    *dist_cm = est_fit_dist;
+    *closing_speed_mps = 0.5f * (scalar_closing_speed + vector_closing_speed);
+    return 1;
 }
 
 // 统一软滑行处理（含近距恢复检测），替代原先各处盲回放+到期停车模式
@@ -264,6 +543,7 @@ static void State3_Handler(void) {
 
         float car_target_dist = uart_data[7];
         uint8_t jump_detected = 0;
+        uint8_t target_reference_changed = merge_expired;
 
         // merge_coast 到期时跳过跳变检测：直接接受当前信标为新目标
         if (has_prev_target && !merge_expired) {
@@ -278,6 +558,8 @@ static void State3_Handler(void) {
             if (jump > jump_thr && coast_speed_sq > 0.01f) {
                 jump_detected = 1;
                 merge_coast_end_time = sys_time_ms + MERGE_COAST_MS;
+            } else if (jump > jump_thr) {
+                target_reference_changed = 1;
             }
         }
 
@@ -291,13 +573,23 @@ static void State3_Handler(void) {
             float current_speed = TARGET_SPEED;
 
             float angle_rad = angle * ((float)M_PI / 180.0f);
-            float target_speed_x = current_speed * cosf(angle_rad);
-            float target_speed_y = current_speed * sinf(angle_rad);
+            float target_dir_x = cosf(angle_rad);
+            float target_dir_y = sinf(angle_rad);
+            float target_speed_x = current_speed * target_dir_x;
+            float target_speed_y = current_speed * target_dir_y;
 
             Mecanum_Set_Velocity(target_speed_x, target_speed_y, 0.0f);
 
             visual_last_vx = target_speed_x;
             visual_last_vy = target_speed_y;
+            if (target_reference_changed) {
+                Visual_Dash_History_Clear();
+            }
+            float history_earth_x = 0.0f;
+            float history_earth_y = 0.0f;
+            if (Visual_Get_Relative_Earth(&history_earth_x, &history_earth_y)) {
+                Visual_Dash_History_Push(history_earth_x, history_earth_y);
+            }
 
             prev_target_x = uart_data[2];
             prev_target_y = uart_data[3];
@@ -319,21 +611,40 @@ static void State4_Handler(void) {
         // 在中心丢失，极大可能是近距离融合，执行硬实时绝对精确盲冲 (加入1秒防重入冷却)
         if (dash_end_time == 0 && Visual_Track_Is_Locked() && !is_cooldown) {
             Visual_Clear_Soft_Coast();
-            float speed_sq = visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy;
+            float dash_vx = visual_last_vx;
+            float dash_vy = visual_last_vy;
+            float dash_dist_cm = prev_car_dist;
+            float dash_closing_speed = TARGET_SPEED;
+
+            uint8_t estimate_valid = Visual_Dash_History_Get_Estimate(
+                &dash_vx, &dash_vy, &dash_dist_cm, &dash_closing_speed);
+            if (estimate_valid) {
+                visual_last_vx = dash_vx;
+                visual_last_vy = dash_vy;
+            }
+
+            float speed_sq = dash_vx * dash_vx + dash_vy * dash_vy;
             float speed = sqrtf(speed_sq);
             if (speed < 0.1f) speed = 0.1f; // 防除零
+            float duration_speed = speed;
+            if (estimate_valid) {
+                if (dash_closing_speed < DASH_DURATION_SPEED_MIN_MPS) {
+                    dash_closing_speed = DASH_DURATION_SPEED_MIN_MPS;
+                } else if (dash_closing_speed > DASH_DURATION_SPEED_MAX_MPS) {
+                    dash_closing_speed = DASH_DURATION_SPEED_MAX_MPS;
+                }
+                duration_speed = dash_closing_speed;
+            }
 
             // 物理绝对时间换算: 时间(s) = 距离(m) / 速度(m/s)
-            float duration_sec = (prev_car_dist / 100.0f) / speed;
-            int32_t duration_ms = (int32_t)(duration_sec * 1000.0f) - 150; // 提前刹车，避免冲过信标
-
-            if (duration_ms > 600) duration_ms = 600;
-            if (duration_ms < 100) duration_ms = 100;
-            duration_ms += STATE4_DASH_EXTRA_MS;
+            float duration_sec = (dash_dist_cm / 100.0f) / duration_speed;
+            int32_t duration_ms = (int32_t)(duration_sec * 1000.0f) - 150 + STATE4_DASH_EXTRA_MS;
+            if (duration_ms > (int32_t)DASH_MS_MAX) duration_ms = (int32_t)DASH_MS_MAX;
+            if (duration_ms < (int32_t)DASH_MS_MIN) duration_ms = (int32_t)DASH_MS_MIN;
             dash_end_time = sys_time_ms + (uint32_t)duration_ms;
             dash_source = 1;
 
-            Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+            Mecanum_Set_Velocity(dash_vx, dash_vy, 0.0f);
             rush_sign = 1;
         } else {
             // 冷却期内或未经历状态3：软滑行（含近距恢复检测）
@@ -349,6 +660,7 @@ static void State4_Handler(void) {
 
 // [重构] 抽离核心状态为全局，以便底层定时器与急停函数能强制干预
 void Visual_State_Reset(void) {
+    zero_consecutive = 0;
     dash_end_time = 0;
     dash_source = 0;
     visual_last_vx = 0.0f;
@@ -357,6 +669,7 @@ void Visual_State_Reset(void) {
     merge_coast_end_time = 0;
     merge_coast_expired = 0;
     visual_coast_expired = 0;
+    Visual_Dash_History_Clear();
     // 注意：不在此函数内清零 rush_cooldown_end_time。
     // rush_cooldown 是 dash 到期时由 1ms ISR 设置的 1 秒冷却期，
     // 其目的是防止 0 速度无限重入。若被一并清零，冷却形同虚设，
@@ -414,15 +727,18 @@ void Visual_Control_Loop(void) {
         is_edge = 0; // [隐患修复 P2.10]: 追踪彻底断开时，清空老旧的边缘记忆
     }
 
-    static uint8_t zero_consecutive = 0;
-
     // 连续两帧全丢（state 0）：信标确定熄灭，强制中断一切滑行/盲冲
     if ((uint8_t)uart_data[5] == 0) {
-        if (++zero_consecutive >= 2) {
-            State0_Handler();
-            rush_sign = 0;
-            return;
+        if (zero_consecutive < 2U) {
+            zero_consecutive++;
         }
+        if (zero_consecutive < 2U) {
+            return; // 首个 state0 仅确认，不让后续 switch 提前执行 State0_Handler
+        }
+
+        State0_Handler();
+        rush_sign = 0;
+        return;
     } else {
         zero_consecutive = 0;
     }

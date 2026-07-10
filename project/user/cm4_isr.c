@@ -169,7 +169,9 @@ void uart1_isr (void)
         
         if(uart_query_byte(UART_1, &temp_rx_dat))
         {
-            fifo_write_buffer(&board_rx_fifo, &temp_rx_dat, 1);
+            if (fifo_write_buffer(&board_rx_fifo, &temp_rx_dat, 1) != FIFO_SUCCESS) {
+                board_rx_fifo_write_fail_count++;
+            }
         }
       
       
