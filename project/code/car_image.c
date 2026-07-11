@@ -23,6 +23,7 @@ static uint32_t track_memory_step_ms = 0;
 static uint8_t  track_memory_started = 0;
 static uint8_t  zero_consecutive = 0;
 static float    prev_target_x = 0.0f, prev_target_y = 0.0f;
+static float    prev_target_rel_x = 0.0f, prev_target_rel_y = 0.0f;
 static uint8_t  has_prev_target = 0;
 static float    prev_car_dist = 0.0f;
 
@@ -37,6 +38,43 @@ static Dash_History_Sample_t dash_history[DASH_HISTORY_SIZE];
 static uint8_t dash_history_head = 0;
 static uint8_t dash_history_count = 0;
 static volatile uint8_t dash_history_clear_pending = 1;
+
+// VISUAL_VELOCITY_GUARD_BEGIN
+// ISR 每次强制停车都会推进代次；当前视觉帧只能发布同一代次内的速度。
+static volatile uint32_t visual_stop_epoch = 0U;
+static uint32_t visual_frame_stop_epoch = 0U;
+
+static void Visual_Begin_Velocity_Frame(void) {
+    visual_frame_stop_epoch = visual_stop_epoch;
+}
+
+static void Visual_Invalidate_Velocity(void) {
+    visual_stop_epoch++;
+    target_vel.vx = 0.0f;
+    target_vel.vy = 0.0f;
+    target_vel.wz = 0.0f;
+}
+
+static uint8_t Visual_Set_Velocity(float vx, float vy, float wz) {
+    uint32_t expected_epoch = visual_frame_stop_epoch;
+
+    if (visual_stop_epoch != expected_epoch) {
+        return 0U;
+    }
+
+    Mecanum_Set_Velocity(vx, vy, wz);
+
+    // ISR 若在三个速度分量写入期间停车，撤销可能残留的部分或完整旧指令。
+    if (visual_stop_epoch != expected_epoch) {
+        target_vel.vx = 0.0f;
+        target_vel.vy = 0.0f;
+        target_vel.wz = 0.0f;
+        return 0U;
+    }
+
+    return 1U;
+}
+// VISUAL_VELOCITY_GUARD_END
 
 // ================== 静态函数前置声明 ==================
 static void State0_Handler(void);
@@ -73,7 +111,7 @@ void Image_Solve(float car_yaw, float *dist, float *angle) {
     float y_car = uart_data[1];       // [1] 小车地面Y坐标
     float x_target = uart_data[2];    // [2] 目标地面X坐标
     float y_target = uart_data[3];    // [3] 目标地面Y坐标
-    float yaw_drone = uart_data[4];   // [4] 无人机偏航角 (deg)
+    float yaw_drone = uart_data[4];   // [4] 无人机已校正的地面系偏航角 (deg)
 
     // 1. 计算无人机坐标系下的相对矢量 (X:前, Y:右)
     float dx = x_target - x_car;
@@ -96,7 +134,7 @@ void Image_Solve(float car_yaw, float *dist, float *angle) {
     dy_car = -dy_car; // Y轴取反适配小车坐标系
 
     // 4. 计算角度 (0度为车头, 90度为车右, 符合 atan2(y, x) 定义)
-    *angle = atan2f(dy_car, dx_car) * (180.0f / (float)M_PI) + YAW_OFFSET;
+    *angle = atan2f(dy_car, dx_car) * (180.0f / (float)M_PI);
 }
 
 // ================== 辅助函数 ==================
@@ -108,6 +146,18 @@ static float Compute_Jump_Threshold(float car_dist) {
     if (thr > JUMP_THRESHOLD_MAX) thr = JUMP_THRESHOLD_MAX;
     return thr;
 }
+
+// RELATIVE_TARGET_JUMP_BEGIN
+static float Compute_Relative_Target_Jump(float car_x, float car_y,
+                                          float target_x, float target_y,
+                                          float previous_rel_x, float previous_rel_y) {
+    float current_rel_x = target_x - car_x;
+    float current_rel_y = target_y - car_y;
+    float dx = current_rel_x - previous_rel_x;
+    float dy = current_rel_y - previous_rel_y;
+    return sqrtf(dx * dx + dy * dy);
+}
+// RELATIVE_TARGET_JUMP_END
 
 static void Visual_Track_Begin_Frame(void) {
     uint32_t now = sys_time_ms;
@@ -208,18 +258,13 @@ static uint8_t Visual_Earth_To_Command_Direction(float earth_x, float earth_y, f
     float car_x = earth_x * cosy + earth_y * siny;
     float car_y = earth_x * siny - earth_y * cosy;
 
-    float offset_rad = YAW_OFFSET * ((float)M_PI / 180.0f);
-    float cos_offset = cosf(offset_rad);
-    float sin_offset = sinf(offset_rad);
-    float command_x = car_x * cos_offset - car_y * sin_offset;
-    float command_y = car_x * sin_offset + car_y * cos_offset;
-    float command_norm = sqrtf(command_x * command_x + command_y * command_y);
+    float command_norm = sqrtf(car_x * car_x + car_y * car_y);
     if (command_norm <= 0.001f) {
         return 0;
     }
 
-    *dir_x = command_x / command_norm;
-    *dir_y = command_y / command_norm;
+    *dir_x = car_x / command_norm;
+    *dir_y = car_y / command_norm;
     return 1;
 }
 
@@ -435,7 +480,7 @@ static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float
     // 并清零 visual_coast_end_time），不再重启新滑行周期，避免死循环。
     if (visual_coast_expired) {
         visual_coast_expired = 0;
-        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+        Visual_Set_Velocity(0.0f, 0.0f, 0.0f);
         return 0;
     }
 
@@ -457,7 +502,7 @@ static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float
             }
         }
         // 无近距目标或信标不可见：保持滑行
-        Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+        Visual_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
         return 0;
     } else {
         // Coast 到期(主循环路径)：必须真正停车，而不是继续重放 visual_last。
@@ -474,7 +519,7 @@ static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float
         visual_coast_end_time = 0;
         visual_last_vx = 0.0f;
         visual_last_vy = 0.0f;
-        Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+        Visual_Set_Velocity(0.0f, 0.0f, 0.0f);
         return 0;
     }
 }
@@ -483,7 +528,7 @@ static uint8_t Visual_Coast_With_Recovery(uint8_t has_prev, float *prev_x, float
 
 // 状态 0：全丢 → 停车 + 清零
 static void State0_Handler(void) {
-    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+    Visual_Set_Velocity(0.0f, 0.0f, 0.0f);
     Visual_Track_Clear();
     has_prev_target = 0;
     dash_end_time = 0;
@@ -508,6 +553,8 @@ static void State12_Handler(uint8_t locked_state) {
 // 状态 3：双目标锁定 (正常追踪)
 static void State3_Handler(void) {
     Visual_Clear_Soft_Coast();
+    float current_target_rel_x = uart_data[2] - uart_data[0];
+    float current_target_rel_y = uart_data[3] - uart_data[1];
 
     // 跳变滑行到期标记：到期时跳过跳变检测，直接接受新目标位置，打破死循环。
     // merge_coast_expired 由 1ms ISR 置位，解决 ISR 先于主循环清零 merge_coast_end_time
@@ -518,18 +565,18 @@ static void State3_Handler(void) {
 
     if (in_merge) {
         // 滑行期间：检查新目标是否已回到原信标附近，若回归则退出滑行恢复追踪
-        float dx = uart_data[2] - prev_target_x;
-        float dy = uart_data[3] - prev_target_y;
-        float dist_prev = sqrtf(dx * dx + dy * dy);
+        float relative_jump = Compute_Relative_Target_Jump(
+            uart_data[0], uart_data[1], uart_data[2], uart_data[3],
+            prev_target_rel_x, prev_target_rel_y);
         float jump_thr = Compute_Jump_Threshold(prev_car_dist);
 
-        if (dist_prev <= jump_thr) {
+        if (relative_jump <= jump_thr) {
             // 目标回到原信标附近：退出滑行，恢复追踪
             Visual_Clear_Merge_Coast();
             in_merge = 0;
         } else {
             // 仍是远处信标：维持原方向滑行，prev 不更新，死咬原始信标
-            Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+            Visual_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
             Visual_Track_Refresh();
             is_edge = (uart_data[7] > EDGE_DIST_CM);
         }
@@ -547,9 +594,9 @@ static void State3_Handler(void) {
 
         // merge_coast 到期时跳过跳变检测：直接接受当前信标为新目标
         if (has_prev_target && !merge_expired) {
-            float dx = uart_data[2] - prev_target_x;
-            float dy = uart_data[3] - prev_target_y;
-            float jump = sqrtf(dx * dx + dy * dy);
+            float jump = Compute_Relative_Target_Jump(
+                uart_data[0], uart_data[1], uart_data[2], uart_data[3],
+                prev_target_rel_x, prev_target_rel_y);
             float jump_thr = Compute_Jump_Threshold(prev_car_dist);
             // [修复] merge_coast 靠重放 visual_last 速度惯性滑过跳变；若信标交接期间速度
             // 已被 dash/coast 到期的 Visual_State_Reset 清零，则"滑行"会退化为原地死停 400ms
@@ -564,7 +611,7 @@ static void State3_Handler(void) {
         }
 
         if (jump_detected) {
-            Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+            Visual_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
         } else {
             // 无跳变（含 merge_coast 到期接受新目标）：正常追踪并更新参考坐标
 
@@ -578,7 +625,7 @@ static void State3_Handler(void) {
             float target_speed_x = current_speed * target_dir_x;
             float target_speed_y = current_speed * target_dir_y;
 
-            Mecanum_Set_Velocity(target_speed_x, target_speed_y, 0.0f);
+            Visual_Set_Velocity(target_speed_x, target_speed_y, 0.0f);
 
             visual_last_vx = target_speed_x;
             visual_last_vy = target_speed_y;
@@ -593,6 +640,8 @@ static void State3_Handler(void) {
 
             prev_target_x = uart_data[2];
             prev_target_y = uart_data[3];
+            prev_target_rel_x = current_target_rel_x;
+            prev_target_rel_y = current_target_rel_y;
             prev_car_dist = car_target_dist;
             has_prev_target = 1;
         }
@@ -644,7 +693,7 @@ static void State4_Handler(void) {
             dash_end_time = sys_time_ms + (uint32_t)duration_ms;
             dash_source = 1;
 
-            Mecanum_Set_Velocity(dash_vx, dash_vy, 0.0f);
+            Visual_Set_Velocity(dash_vx, dash_vy, 0.0f);
             rush_sign = 1;
         } else {
             // 冷却期内或未经历状态3：软滑行（含近距恢复检测）
@@ -682,16 +731,12 @@ void Visual_Brake_Check(void) {
     // [最后一道防线] 硬件级绝对时间刹车：如果系统处于盲冲或滑行且绝对时间已到，强行归零指令。
     // 这填补了主循环串口长时间无数据时无法及时刹车的空窗期隐患。
     if (dash_end_time > 0 && sys_time_ms >= dash_end_time) {
-        target_vel.vx = 0.0f;
-        target_vel.vy = 0.0f;
-        target_vel.wz = 0.0f;
+        Visual_Invalidate_Velocity();
         Visual_State_Reset();
         rush_cooldown_end_time = sys_time_ms + 1000; // [修复] 盲冲结束，强制进入 1 秒冷却，防止 0 速度无限重入
     }
     else if (visual_coast_end_time > 0 && sys_time_ms >= visual_coast_end_time) {
-        target_vel.vx = 0.0f;
-        target_vel.vy = 0.0f;
-        target_vel.wz = 0.0f;
+        Visual_Invalidate_Velocity();
         Visual_State_Reset();
         // 标志必须在 Visual_State_Reset() 之后设，否则会被其清零
         visual_coast_expired = 1;
@@ -699,15 +744,14 @@ void Visual_Brake_Check(void) {
     else if (merge_coast_end_time > 0 && sys_time_ms >= merge_coast_end_time) {
         // [修复] merge_coast 到期时仅停车，不调 Visual_State_Reset：保留 prev_target/has_prev_target
         // 供 Visual_Control_Loop 恢复后继续追踪（接受新信标），而非清空全部视觉状态
-        target_vel.vx = 0.0f;
-        target_vel.vy = 0.0f;
-        target_vel.wz = 0.0f;
+        Visual_Invalidate_Velocity();
         merge_coast_expired = 1;    // 置位标志，防 Visual_Control_Loop 竞态重入跳变检测
         merge_coast_end_time = 0;
     }
 }
 
 void Visual_Control_Loop(void) {
+    Visual_Begin_Velocity_Frame();
 #if 0
     static uint32_t last_time = 0;
     uint32_t current_time = sys_time_ms;
@@ -746,7 +790,7 @@ void Visual_Control_Loop(void) {
     // [隐患修复3]: 绝对物理时钟接管系统。一旦盲冲启动，无视后续一切视觉状态强制执行，直到绝对物理时间到达。
     // 这彻底解决了无人机丢包、相机曝光导致单帧时长被放大所引发的冲刺距离失控问题。
     if (dash_end_time > 0) {
-        Mecanum_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+        Visual_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
         rush_sign = 1;
         return; // 提前退出，屏蔽后续视觉解析！
     }

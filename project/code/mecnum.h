@@ -71,8 +71,6 @@
 
 #include "chassis_arm.h"
 
-#define YAW_OFFSET 45.0f
-
 // ================== 主循环存活看门狗 ==================
 // 主循环每轮刷新 main_loop_heartbeat_ms = sys_time_ms。若 1ms ISR 发现距上次刷新
 // 超过 MAINLOOP_STALL_MS，则判定主循环卡死并在 ISR 内强制切断动力(等效未武装)。
