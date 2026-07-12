@@ -84,6 +84,8 @@ PIT_CH0 ISR (1ms 硬实时):          car_image → Image_Solve()
 
 ## CONVENTIONS
 
+- **实现复用与可读性**: 在能达到同样效果时，优先使用逐飞（ZF）库函数和项目已有实现，避免重复封装或手写替代；同时保持调用意图、命名和控制流清晰易读。
+
 ### 命名规则
 - **函数**: `ModuleName_Action()` — 模块前缀 + 下划线 + PascalCase
   - `PID_Init()`, `Mecanum_Control_Loop()`, `Encoder_GetCount()`

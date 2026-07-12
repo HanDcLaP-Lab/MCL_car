@@ -86,19 +86,12 @@ void wireless_uart_output_target(void){
 }
 
 void wireless_uart_output_imu(void){
-    wireless_uart_send_float(imu_car_rc_data.pitch);
-    wireless_uart_send_string(",");
     wireless_uart_send_float(imu_car_rc_data.roll);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_rc_data.yaw);
+    wireless_uart_send_float(imu_car_rc_data.pitch);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_rc_data.yaw_total);
-    // wireless_uart_send_int(imu660rc_acc_x);
-    // wireless_uart_send_string(",");
-    // wireless_uart_send_int(imu660rc_acc_y);
-    // wireless_uart_send_string(",");
-    // wireless_uart_send_int(imu660rc_acc_z);
-    wireless_uart_send_string("\n");
+    wireless_uart_send_float(imu_car_rc_data.yaw);
+    wireless_uart_send_string("\r\n");
 }
 void wireless_uart_output_encoder(void){
     wireless_uart_send_float(encoder_data.lf);

@@ -116,6 +116,18 @@ static void IMU_Car_RC_Mahony_Update(float gx, float gy, float gz, float ax, flo
 
     float ex = ay * vz - az * vy;
     float ey = az * vx - ax * vz;
+    float ez = ax * vy - ay * vx;
+
+    // 运动加速度的模长可能仍接近1g；方向创新用于阻止其污染roll/pitch。
+    float direction_error = sqrtf(ex * ex + ey * ey + ez * ez);
+    float direction_weight = 1.0f;
+    if (direction_error >= IMU_CAR_ACC_DIR_REJECT_ERROR) {
+        direction_weight = 0.0f;
+    } else if (direction_error > IMU_CAR_ACC_DIR_FULL_TRUST_ERROR) {
+        direction_weight = (IMU_CAR_ACC_DIR_REJECT_ERROR - direction_error)
+                         / (IMU_CAR_ACC_DIR_REJECT_ERROR - IMU_CAR_ACC_DIR_FULL_TRUST_ERROR);
+    }
+    if (direction_weight < acc_weight) acc_weight = direction_weight;
 
     if (acc_weight > 0.1f) {
         exInt += ex * IMU_CAR_MAHONY_KI * IMU_CAR_DT * acc_weight;

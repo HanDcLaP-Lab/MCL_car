@@ -34,6 +34,8 @@
 #define IMU_CAR_MAHONY_KI             0.0015f // roll/pitch 互补修正积分增益，运动时会降权
 #define IMU_CAR_ACC_FULL_TRUST_ERR_G  0.04f   // 加速度模长偏离 1g 小于此值时完全信任
 #define IMU_CAR_ACC_REJECT_ERR_G      0.08f   // 加速度模长偏离 1g 大于此值时停止加速度修正
+#define IMU_CAR_ACC_DIR_FULL_TRUST_ERROR 0.052336f // sin(3deg): 重力方向误差小于此值时完全信任
+#define IMU_CAR_ACC_DIR_REJECT_ERROR     0.139173f // sin(8deg): 重力方向误差大于此值时拒绝修正
 
 
 // ================= 核心结构体定义 =================

@@ -175,6 +175,12 @@ int main(void)
             }
         }
 
+        static uint32_t last_attitude_print_ms = 0;
+        if ((uint32_t)(sys_time_ms - last_attitude_print_ms) >= 500U) {
+            last_attitude_print_ms = sys_time_ms;
+            wireless_uart_output_imu();
+        }
+
 /* 无线串口打印开始 */
         if (board_comm_debug_pending) {
             board_comm_debug_pending = 0;
