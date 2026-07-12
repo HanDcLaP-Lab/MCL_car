@@ -27,8 +27,8 @@ CONTROL_DT = 0.001f       // 控制周期 1ms
 VISUAL_DT = 0.020f        // 旧视觉周期常量；当前 Visual_Control_Loop 由收包触发
 MAX_ACCEL_X/Y/W           // 加速度限制
 COAST_HOLD_MS = 600U      // 目标丢失后软滑行保持时间 (ms)
-TRACK_MEMORY_MS = 1000U   // 最近一次可靠双目标跟踪的记忆上限 (ms)
-TRACK_LOCK_THRESHOLD_MS = 150U // 判定已有效锁定所需的可靠跟踪时长 (ms)
+TRACK_FRAMES_MAX = 50U        // 可靠跟踪记忆帧数 (50帧≈1s@50Hz)
+TRACK_FRAMES_LOCK_THRESHOLD = 8U // 判定已有效锁定所需的跟踪帧数 (8帧≈160ms)
 JUMP_THRESHOLD_MIN = 50   // 跳变检测阈值下限 (cm)
 JUMP_THRESHOLD_MAX = 200  // 跳变检测阈值上限 (cm)
 JUMP_SCALE_COEF = 0.4     // 跳变阈值缩放系数 (× car_dist)
@@ -36,7 +36,7 @@ MERGE_COAST_MS = 600U     // 信标跳变滑行持续时间 (ms)
 DASH_MS_MIN = 200U        // 固定补偿计入后的盲冲时长下限 (ms)
 DASH_MS_MAX = 700U        // 固定补偿计入后的盲冲时长上限 (ms)
 STATE4_DASH_EXTRA_MS = 100 // state4 融合盲冲固定增加时间 (ms)
-Dash history = 最近3~6帧 state3 统一大地坐标加权拟合；离群/残差/方向检查失败时回退上一速度
+Dash history = 最近4~8帧 state3 统一大地坐标加权拟合；1D距离回归+EMA滤波；方向/一致性检查失败时回退上一速度
 Dash timing = 可信拟合同时估计接近速度，并在受限范围内参与 state4 dash 时间计算
 EDGE_DIST_CM = 200.0      // 画面边缘距离分界 (cm)
 ```

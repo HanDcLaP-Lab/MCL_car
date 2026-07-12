@@ -29,7 +29,6 @@ extern volatile uint8_t  merge_coast_expired;
 extern volatile uint8_t  visual_coast_expired;
 extern volatile uint32_t dash_end_time;
 extern volatile uint32_t rush_cooldown_end_time;
-extern volatile uint8_t  dash_source;
 extern int rush_sign;
 extern float dist_out;
 

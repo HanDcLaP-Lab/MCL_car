@@ -120,11 +120,7 @@ void wireless_uart_output_coast(void) {
     wireless_uart_send_int(uart_data[5]);
     
     if (dash_end_time > 0 && now < dash_end_time) {
-        if (dash_source == 2) {
-            wireless_uart_send_string(",4,");
-        } else {
-            wireless_uart_send_string(",3,");
-        }
+        wireless_uart_send_string(",3,");
         wireless_uart_send_int((int32_t)(dash_end_time - now));
         wireless_uart_send_string("\n");
     }else if (visual_coast_end_time > 0 && now < visual_coast_end_time) {
