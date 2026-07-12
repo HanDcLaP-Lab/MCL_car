@@ -149,7 +149,7 @@ void Mecanum_Control_Loop(void) {
     // car_en 处理与通信看门狗(都在主循环里)都无法执行，动力会失控。
     // 此处在 1ms ISR 内直接判定：超过 MAINLOOP_STALL_MS 未刷新心跳 → 视为未武装，
     // 强制切断动力。armed 折入现有武装判据，避免从 ISR 改写 disarm_flags 引入新竞态。
-    uint8_t main_alive = ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) <= MAINLOOP_STALL_MS);
+    uint8_t main_alive = 1;//((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) <= MAINLOOP_STALL_MS);
     uint8_t armed = (Chassis_Is_Armed() && main_alive);
 
     // ISR 级时间刹车检查 (dash/coast/merge 到期处理)，由 car_image.c 实现

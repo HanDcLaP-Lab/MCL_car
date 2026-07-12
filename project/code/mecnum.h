@@ -28,7 +28,7 @@
 #define MOTOR_LF_PWM    TCPWM_CH50_P18_7    // 左前 PWM
 #define MOTOR_RF_PWM    TCPWM_CH13_P00_3    // 右前 PWM
 #define MOTOR_LB_PWM    TCPWM_CH54_P18_3    // 左后 PWM
-#define MOTOR_RB_PWM    TCPWM_CH00_P06_1    // 右后 PWM
+#define MOTOR_RB_PWM    TCPWM_CH52_P18_5    // 右后 PWM
 
 // 电机方向引脚定义
 #define MOTOR_LF_DIR    P18_6               // 左前 DIR

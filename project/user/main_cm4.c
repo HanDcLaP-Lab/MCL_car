@@ -83,7 +83,7 @@ int main(void)
     }
     // 底盘解锁由 1ms ISR 在 IMU 校准完成时自动处理 (Chassis_Unblock(DISARM_UNCALIBRATED))
 
-    //test_program_1();
+    test_program_1();
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
@@ -175,12 +175,6 @@ int main(void)
             }
         }
 
-        static uint32_t last_attitude_print_ms = 0;
-        if ((uint32_t)(sys_time_ms - last_attitude_print_ms) >= 500U) {
-            last_attitude_print_ms = sys_time_ms;
-            wireless_uart_output_imu();
-        }
-
 /* 无线串口打印开始 */
         if (board_comm_debug_pending) {
             board_comm_debug_pending = 0;
@@ -194,7 +188,7 @@ int main(void)
             //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_rc_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
             //Current_speed_display();
             //wireless_uart_output_motor();
-            print_imu();
+            //print_imu();
             //wireless_uart_output_commu();
             // printf("%.2f," , uart_data[0]);
             // printf("%.2f," , uart_data[1]);

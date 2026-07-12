@@ -8,6 +8,7 @@
 #define BOARD_BAUDRATE   1000000
 #define BOARD_TX_PIN     UART1_TX_P06_1
 #define BOARD_RX_PIN     UART1_RX_P06_0
+#define BOARD_RS485_DIR_PIN P06_2 // MAX3485 RE#/DE: 低电平为仅接收
 #define BOARD_STATE4_MAX_TRAILING_FRAMES 5U // state4 后积压超过约100ms普通帧则视为陈旧事件
 
 // ================= 外部变量声明 =================
