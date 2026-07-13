@@ -37,29 +37,22 @@
 #define MOTOR_RB_DIR    P06_3               // 右后 DIR
 
 // 记忆/滑行参数
-#define COAST_HOLD_MS  600U      // 目标丢失后软滑行保持时间 (ms)
 #define TRACK_FRAMES_MAX        50U   // 可靠跟踪置信度累计上限 (帧数, 50帧≈1s@50Hz)
 #define TRACK_FRAMES_LOCK_THRESHOLD 8U // 判定已有效锁定所需的可靠跟踪帧数 (8帧≈160ms@50Hz)
 
-// 信标跳变检测
-#define JUMP_THRESHOLD_MIN      50.0f   // 跳变检测阈值下限 (cm)
-#define JUMP_THRESHOLD_MAX      200.0f  // 跳变检测阈值上限 (cm)
-#define JUMP_SCALE_COEF         0.4f    // 跳变阈值缩放系数 (× car_dist)
-#define MERGE_COAST_MS          600U    // 信标跳变滑行持续时间 (ms)
+// 目标身份滤波
+#define CAR_VALID_MS            50U    // 小车坐标有效期 (ms)
+#define TARGET_VALID_MS         50U    // 目标坐标有效期 (ms)
+#define ANGLE_VALID_MS          600U   // 合成角度保质期 (ms)
+#define ANGLE_MATCH_COS         0.964f // cos(15.5°)，同目标角度匹配阈值
 
-// 边缘判定
-#define EDGE_DIST_CM            200.0f  // 信标距画面中心距离分界 (cm)，>此值视为边缘
-#define DASH_MS_MIN             200U    // 加上固定补偿后的盲冲时长下限 (ms)
-#define DASH_MS_MAX             700U    // 加上固定补偿后的盲冲时长上限 (ms)
-#define STATE4_DASH_EXTRA_MS    100     // state4 融合盲冲在计算时长基础上固定增加 100ms
-#define DASH_HISTORY_SIZE       8U      // state4 盲冲使用最近多帧 state3 位置做等速拟合
-#define DASH_HISTORY_MAX_AGE_MS 200U    // 只使用足够新的历史帧，避免旧目标污染融合盲冲
-#define DASH_HISTORY_MIN_SAMPLES 4U     // 等速拟合至少需要的有效样本数
-#define DASH_HISTORY_SAMPLE_JUMP_BASE_CM 12.0f // 相邻帧允许的基础视觉抖动 (cm)
-#define DASH_HISTORY_MAX_REL_SPEED_CM_S 200.0f // 相邻帧相对位置变化速度上限 (cm/s)
-#define DASH_HISTORY_MAX_DIR_CHANGE_COS 0.94f // 拟合方向相对上一速度方向最多改变约20度
-#define DASH_HISTORY_MIN_CLOSING_SPEED_MPS 0.20f // 可信接近速度下限 (m/s)
-#define DASH_HISTORY_MAX_CLOSING_SPEED_MPS 1.20f // 可信接近速度上限 (m/s)
+// 盲冲 (Dash) 参数
+#define DASH_DIST_CM            50.0f   // 车-目标距离低于此值时触发盲冲 (cm)
+#define DASH_MS_MIN             200U    // 盲冲时长下限 (ms)
+#define DASH_MS_MAX             700U    // 盲冲时长上限 (ms)
+#define DASH_EXTRA_MS           -50     // 盲冲在计算时长基础上固定增加 100ms
+#define DASH_SPEED_MIN_MPS      0.20f   // 可信接近速度下限 (m/s); 兼可靠性门下界
+#define DASH_SPEED_MAX_MPS      1.20f   // 可信接近速度上限 (m/s)
 
 #include "chassis_arm.h"
 

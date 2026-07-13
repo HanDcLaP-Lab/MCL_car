@@ -114,26 +114,21 @@ void wireless_uart_output_encoder(void){
 
 void wireless_uart_output_coast(void) {
     extern volatile uint32_t sys_time_ms;
+    extern volatile float visual_last_vx, visual_last_vy;
 
     uint32_t now = sys_time_ms;
 
     wireless_uart_send_int(uart_data[5]);
-    
+
     if (dash_end_time > 0 && now < dash_end_time) {
         wireless_uart_send_string(",3,");
         wireless_uart_send_int((int32_t)(dash_end_time - now));
-        wireless_uart_send_string("\n");
-    }else if (visual_coast_end_time > 0 && now < visual_coast_end_time) {
-        wireless_uart_send_string(",1,");
-        wireless_uart_send_int((int32_t)(visual_coast_end_time - now));
-        wireless_uart_send_string("\n");
-    }else if (merge_coast_end_time > 0 && now < merge_coast_end_time) {
-        wireless_uart_send_string(",2,");
-        wireless_uart_send_int((int32_t)(merge_coast_end_time - now));
-        wireless_uart_send_string("\n");
-    }else{
-        wireless_uart_send_string(",0,0\n");
+    } else {
+        float spd = visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy;
+        wireless_uart_send_string(spd > 0.001f ? ",1," : ",0,");
+        wireless_uart_send_int(0);
     }
+    wireless_uart_send_string("\n");
 }
 
 void wireless_uart_output_stop_debug(void) {

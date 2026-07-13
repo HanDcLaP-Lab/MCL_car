@@ -10,7 +10,7 @@
 | **pid** | `pid.c` / `pid.h` | PID控制器：`PID_Calculate()` (位置式) + `PID_Calculate_Incremental()` (增量式) |
 | **encoder** | `encoder.c` / `encoder.h` | 4路正交编码器读取，转m/s，卡尔曼滤波平滑 |
 | **imu_car_rc** | `imu_car_rc.c` / `imu_car_rc.h` | IMU660RC原始acc/gyro轮询 + Kalman/Mahony姿态融合：roll/pitch、偏航角/累计角度/角速度，坐标系映射宏 |
-| **car_board_comm** | `car_board_comm.c` / `car_board_comm.h` | UART1板间通讯：AA55协议解析、最新帧更新、state4完整帧与批次急停锁存 |
+| **car_board_comm** | `car_board_comm.c` / `car_board_comm.h` | UART1板间通讯：AA55协议解析、最新帧更新与批次急停锁存 |
 | **car_image** | `car_image.c` / `car_image.h` | 视觉追踪状态机：坐标系变换、双目标跟踪记忆、盲冲/滑行控制 |
 | **kalman_filter** | `kalman_filter.c` / `kalman_filter.h` | 一维卡尔曼滤波器 |
 | **wireless_uart** | `wireless_uart.c` / `wireless_uart.h` | 无线串口调试输出 (UART2)，实时发送电机/PID/IMU/编码器数据 |
@@ -26,19 +26,22 @@ PWM_MAX_M = 5000.0f       // PWM 最大占空比 (上限10000)
 CONTROL_DT = 0.001f       // 控制周期 1ms
 VISUAL_DT = 0.020f        // 旧视觉周期常量；当前 Visual_Control_Loop 由收包触发
 MAX_ACCEL_X/Y/W           // 加速度限制
-COAST_HOLD_MS = 600U      // 目标丢失后软滑行保持时间 (ms)
-TRACK_FRAMES_MAX = 50U        // 可靠跟踪记忆帧数 (50帧≈1s@50Hz)
-TRACK_FRAMES_LOCK_THRESHOLD = 8U // 判定已有效锁定所需的跟踪帧数 (8帧≈160ms)
-JUMP_THRESHOLD_MIN = 50   // 跳变检测阈值下限 (cm)
-JUMP_THRESHOLD_MAX = 200  // 跳变检测阈值上限 (cm)
-JUMP_SCALE_COEF = 0.4     // 跳变阈值缩放系数 (× car_dist)
-MERGE_COAST_MS = 600U     // 信标跳变滑行持续时间 (ms)
-DASH_MS_MIN = 200U        // 固定补偿计入后的盲冲时长下限 (ms)
-DASH_MS_MAX = 700U        // 固定补偿计入后的盲冲时长上限 (ms)
-STATE4_DASH_EXTRA_MS = 100 // state4 融合盲冲固定增加时间 (ms)
-Dash history = 最近4~8帧 state3 统一大地坐标加权拟合；1D距离回归+EMA滤波；方向/一致性检查失败时回退上一速度
-Dash timing = 可信拟合同时估计接近速度，并在受限范围内参与 state4 dash 时间计算
-EDGE_DIST_CM = 200.0      // 画面边缘距离分界 (cm)
+CAR_VALID_MS = 50U         // 小车坐标保质期 (ms)
+TARGET_VALID_MS = 50U      // 目标坐标保质期 (ms)
+ANGLE_VALID_MS = 600U      // 合成角度保质期 (ms)，替代旧 COAST_HOLD_MS
+ANGLE_MATCH_COS = 0.964f   // cos(15.5°)，同目标角度匹配阈值
+DASH_DIST_CM = 50.0f       // 车-目标距离低于此值时触发盲冲 (cm)
+DASH_MS_MIN = 200U        // 盲冲时长下限 (ms)
+DASH_MS_MAX = 700U        // 盲冲时长上限 (ms)
+DASH_EXTRA_MS = 100       // 盲冲在计算时长基础上固定增加 100ms
+DASH_SPEED_MIN_MPS = 0.20f // 可信接近速度下限, 兼可靠性门下界
+DASH_SPEED_MAX_MPS = 1.20f // 可信接近速度上限
+Target identity filter = 5 个 Expiring_Slot_t (car/target/latest/adopted/pending) 替代两套 coast；
+  角度差 < 15.5° 时采纳新观测，否则暂存 pending 直到旧目标过期
+Dash 方向 = adopted_angle 方向向量 EMA (α=0.3, Cartesian 坐标系, 360° 环绕安全)
+Dash 速度 = 帧间距离差 EMA (α=0.3) + 可靠性门 (≥4 样本且 > DASH_SPEED_MIN_MPS → 用估计值; 否则 TARGET_SPEED)
+Dash 距离 = 距离 EMA (α=0.3, 防末帧噪声)
+Dash 触发 = state3 期间车-目标距离 < DASH_DIST_CM (50cm) 时在 State3_Handler 内直接触发
 ```
 
 ## 控制架构 (mecnum.c)

@@ -83,7 +83,7 @@ int main(void)
     }
     // 底盘解锁由 1ms ISR 在 IMU 校准完成时自动处理 (Chassis_Unblock(DISARM_UNCALIBRATED))
 
-    test_program_1();
+    //test_program_1();
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
@@ -137,15 +137,7 @@ int main(void)
             last_visual_time_ms = now;
             visual_loop_count_debug++;
             if (drone_running) {
-                // 短 state4 使用同帧完整坐标快照；若无事件则 uart_data 保持最新普通帧。
-                uint8_t state4_consumed = Board_Comm_Consume_State4_Event();
                 Visual_Control_Loop();
-                if (state4_consumed) {
-                    Board_Comm_Restore_Latest_Frame();
-                }
-            } else {
-                // 停止事件优先后，丢弃同批次视觉事件，避免后续补执行陈旧 dash。
-                Board_Comm_Discard_State4_Event();
             }
         } else {
             drone_timeout_cnt++;
