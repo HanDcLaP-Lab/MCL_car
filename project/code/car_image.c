@@ -8,6 +8,7 @@ float dist_out = 0;
 volatile float visual_last_vx = 0.0f;
 volatile float visual_last_vy = 0.0f;
 volatile uint32_t dash_end_time = 0;          // 盲冲绝对结束物理时间
+static volatile uint32_t post_dash_hold_end_time = 0; // 盲冲后静止等待结束时间
 volatile uint32_t rush_cooldown_end_time = 0; // 防重入冷却绝对结束时间
 
 // ================== 保质期槽位 (目标身份滤波) ==================
@@ -23,10 +24,42 @@ static Expiring_Slot_t target_slot;     // 目标地面坐标
 static Expiring_Slot_t latest_angle;    // 最新合成角度
 static Expiring_Slot_t adopted_angle;   // 当前采纳角度
 static Expiring_Slot_t pending_angle;   // 被拒绝候选
+static float pending_angle_votes[TARGET_SWITCH_VOTE_WINDOW];
+static uint8_t pending_angle_vote_count = 0;
+static uint8_t pending_angle_vote_head = 0;
 
 static uint8_t slot_check(Expiring_Slot_t *s) {
     if (s->valid && sys_time_ms >= s->expire_ms) s->valid = 0;
     return s->valid;
+}
+
+static uint8_t angle_matches(float a, float b) {
+    return cosf(a - b) >= ANGLE_MATCH_COS;
+}
+
+static void target_vote_reset(void) {
+    pending_angle.valid = 0;
+    pending_angle_vote_count = 0;
+    pending_angle_vote_head = 0;
+}
+
+static uint8_t target_vote_add(float angle) {
+    uint8_t matches = 0;
+
+    pending_angle_votes[pending_angle_vote_head] = angle;
+    pending_angle_vote_head++;
+    if (pending_angle_vote_head >= TARGET_SWITCH_VOTE_WINDOW) {
+        pending_angle_vote_head = 0;
+    }
+    if (pending_angle_vote_count < TARGET_SWITCH_VOTE_WINDOW) {
+        pending_angle_vote_count++;
+    }
+
+    for (uint8_t i = 0; i < pending_angle_vote_count; i++) {
+        if (angle_matches(angle, pending_angle_votes[i])) matches++;
+    }
+    return pending_angle_vote_count >= TARGET_SWITCH_VOTE_WINDOW &&
+           matches >= TARGET_SWITCH_VOTE_MAJORITY;
 }
 
 // ================== 视觉状态机共享静态变量 ==================
@@ -179,59 +212,61 @@ void Image_Solve(float car_yaw, float *dist, float *angle) {
 static uint8_t target_filter_update(uint8_t locked_state) {
     uint32_t now = sys_time_ms;
 
-    if (locked_state == 1 || locked_state == 3) {
+    if (locked_state == 3) {
         car_slot.value   = uart_data[0];
         car_slot.value_y = uart_data[1];
         car_slot.expire_ms = now + CAR_VALID_MS;
         car_slot.valid = 1;
-    }
-    if (locked_state == 2 || locked_state == 3) {
         target_slot.value   = uart_data[2];
         target_slot.value_y = uart_data[3];
         target_slot.expire_ms = now + TARGET_VALID_MS;
         target_slot.valid = 1;
-    }
 
-    if (slot_check(&car_slot) && slot_check(&target_slot)) {
-        float dx = target_slot.value   - car_slot.value;
-        float dy = target_slot.value_y - car_slot.value_y;
-        float delta = (imu_car_rc_data.yaw - uart_data[4]) * ((float)M_PI / 180.0f);
-        float dx_car = dx * cosf(delta) + dy * sinf(delta);
-        float dy_car = -dx * sinf(delta) + dy * cosf(delta);
-        dy_car = -dy_car;
-        latest_angle.value = atan2f(dy_car, dx_car);
-        latest_angle.expire_ms = now + ANGLE_VALID_MS;
-        latest_angle.valid = 1;
+        if (slot_check(&car_slot) && slot_check(&target_slot)) {
+            float dx = target_slot.value   - car_slot.value;
+            float dy = target_slot.value_y - car_slot.value_y;
+            float delta = (imu_car_rc_data.yaw - uart_data[4]) * ((float)M_PI / 180.0f);
+            float dx_car = dx * cosf(delta) + dy * sinf(delta);
+            float dy_car = -dx * sinf(delta) + dy * cosf(delta);
+            dy_car = -dy_car;
+            latest_angle.value = atan2f(dy_car, dx_car);
+            latest_angle.expire_ms = now + ANGLE_VALID_MS;
+            latest_angle.valid = 1;
+        }
+    } else {
+        latest_angle.valid = 0;
+        target_vote_reset();
     }
 
     uint8_t adopted_ok = slot_check(&adopted_angle);
-    uint8_t latest_ok  = slot_check(&latest_angle);
+    uint8_t latest_ok  = (locked_state == 3) && slot_check(&latest_angle);
 
     if (latest_ok) {
         if (!adopted_ok) {
             adopted_angle = latest_angle;
-            pending_angle.valid = 0;
+            target_vote_reset();
+            adopted_ok = 1;
         } else {
-            float cd = cosf(latest_angle.value) * cosf(adopted_angle.value)
-                     + sinf(latest_angle.value) * sinf(adopted_angle.value);
-            if (cd >= ANGLE_MATCH_COS) {
+            adopted_angle.expire_ms = now + ANGLE_VALID_MS;
+            if (angle_matches(latest_angle.value, adopted_angle.value)) {
                 adopted_angle = latest_angle;
-                pending_angle.valid = 0;
+                target_vote_reset();
             } else {
                 pending_angle = latest_angle;
+                if (target_vote_add(latest_angle.value)) {
+                    adopted_angle = latest_angle;
+                    target_vote_reset();
+                    Mecanum_Set_Large_Turn_Accel_Limit(1U);
+                    Visual_Track_Clear();
+                    dash_dir_vx_est = 0; dash_dir_vy_est = 0;
+                    dash_speed_est = 0; dash_dist_prev = 0; dash_stamp_prev = 0;
+                    dash_speed_samples = 0; dash_dist_est = 0;
+                }
             }
         }
     }
 
     if (adopted_ok) {
-        visual_last_vx = TARGET_SPEED * cosf(adopted_angle.value);
-        visual_last_vy = TARGET_SPEED * sinf(adopted_angle.value);
-        return 1;
-    }
-
-    if (slot_check(&pending_angle)) {
-        adopted_angle = pending_angle;
-        pending_angle.valid = 0;
         visual_last_vx = TARGET_SPEED * cosf(adopted_angle.value);
         visual_last_vy = TARGET_SPEED * sinf(adopted_angle.value);
         return 1;
@@ -247,6 +282,7 @@ static uint8_t target_filter_update(uint8_t locked_state) {
 
 // 状态 0：全丢 → 停车 + 清零
 static void State0_Handler(void) {
+    Mecanum_Set_Large_Turn_Accel_Limit(0U);
     Visual_Set_Velocity(0.0f, 0.0f, 0.0f);
     Visual_Track_Clear();
     has_prev_target = 0;
@@ -257,7 +293,7 @@ static void State0_Handler(void) {
     target_slot.valid = 0;
     latest_angle.valid = 0;
     adopted_angle.valid = 0;
-    pending_angle.valid = 0;
+    target_vote_reset();
     dash_dir_vx_est = 0; dash_dir_vy_est = 0;
     dash_speed_est = 0; dash_dist_prev = 0; dash_stamp_prev = 0;
     dash_speed_samples = 0; dash_dist_est = 0;
@@ -370,14 +406,16 @@ static void State3_Handler(void) {
 void Visual_State_Reset(void) {
     zero_consecutive = 0;
     dash_end_time = 0;
+    Mecanum_Set_Large_Turn_Accel_Limit(0U);
 
     visual_last_vx = 0.0f;
     visual_last_vy = 0.0f;
+    post_dash_hold_end_time = 0;
     car_slot.valid = 0;
     target_slot.valid = 0;
     latest_angle.valid = 0;
     adopted_angle.valid = 0;
-    pending_angle.valid = 0;
+    target_vote_reset();
     dash_dir_vx_est = 0; dash_dir_vy_est = 0;
     dash_speed_est = 0; dash_dist_prev = 0; dash_stamp_prev = 0;
     dash_speed_samples = 0; dash_dist_est = 0;
@@ -393,6 +431,7 @@ void Visual_Brake_Check(void) {
     if (dash_end_time > 0 && sys_time_ms >= dash_end_time) {
         Visual_Invalidate_Velocity();
         Visual_State_Reset();
+        post_dash_hold_end_time = sys_time_ms + POST_DASH_HOLD_MS;
         rush_cooldown_end_time = sys_time_ms + 1000;
     }
 }
@@ -437,6 +476,15 @@ void Visual_Control_Loop(void) {
         Visual_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
         rush_sign = 1;
         return; // 提前退出，屏蔽后续视觉解析！
+    }
+
+    // Dash结束后先静止，等待无人机与画面稳定，再从干净状态采纳新目标。
+    if (post_dash_hold_end_time > 0) {
+        if (sys_time_ms < post_dash_hold_end_time) {
+            Visual_Set_Velocity(0.0f, 0.0f, 0.0f);
+            return;
+        }
+        post_dash_hold_end_time = 0;
     }
 
     // 0: 全丢, 1: 仅小车, 2: 仅信标, 3: 都有

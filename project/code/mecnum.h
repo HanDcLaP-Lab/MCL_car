@@ -18,7 +18,8 @@
 #define VISUAL_DT       0.020f
 
 // 加速度限制 (单位: m/s^2 和 rad/s^2)
-#define MAX_ACCEL_LINEAR 15.0f
+#define MAX_ACCEL_LINEAR 1.0f
+#define LARGE_TURN_ACCEL_SCALE 0.5f
 #define MAX_ACCEL_W      1.0f
 
 
@@ -46,12 +47,15 @@
 #define TARGET_VALID_MS         50U    // 目标坐标有效期 (ms)
 #define ANGLE_VALID_MS          600U   // 合成角度保质期 (ms)
 #define ANGLE_MATCH_COS         0.964f // cos(15.5°)，同目标角度匹配阈值
+#define TARGET_SWITCH_VOTE_WINDOW  25U // 大角度候选投票窗口
+#define TARGET_SWITCH_VOTE_MAJORITY 24U // 25帧窗口内至少24票才切换
 
 // 盲冲 (Dash) 参数
 #define DASH_DIST_CM            50.0f   // 车-目标距离低于此值时触发盲冲 (cm)
 #define DASH_MS_MIN             200U    // 盲冲时长下限 (ms)
 #define DASH_MS_MAX             700U    // 盲冲时长上限 (ms)
-#define DASH_EXTRA_MS           -50     // 盲冲在计算时长基础上固定减少 50ms
+#define DASH_EXTRA_MS          -350     // 盲冲在计算时长基础上固定减少 200ms
+#define POST_DASH_HOLD_MS       300U    // 盲冲结束后静止等待视觉稳定 (ms)
 #define DASH_SPEED_MIN_MPS      0.20f   // 可信接近速度下限 (m/s); 兼可靠性门下界
 #define DASH_SPEED_MAX_MPS      1.20f   // 可信接近速度上限 (m/s)
 
@@ -111,6 +115,7 @@ extern float ang_out;
  * @param wz: 旋转速度 (rad/s), 逆时针正
  */
 void Mecanum_Set_Velocity(float vx, float vy, float wz);
+void Mecanum_Set_Large_Turn_Accel_Limit(uint8_t enable);
 
 /**
  * @brief 底盘控制循环，建议在定时器中断中调用 (周期需与 CONTROL_DT 一致)

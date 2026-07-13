@@ -27,6 +27,7 @@ Motor_Output_t motor_output = {0};
 float smooth_vx = 0.0f;
 float smooth_vy = 0.0f;
 float smooth_wz = 0.0f;
+static volatile uint8_t large_turn_accel_state = 0U; // 0:关闭 1:等待新指令 2:过渡中
 
 // ================== 内部辅助函数 ==================
 
@@ -99,6 +100,10 @@ void Mecanum_Set_Velocity(float vx, float vy, float wz){
     target_vel.wz = wz;
 }
 
+void Mecanum_Set_Large_Turn_Accel_Limit(uint8_t enable) {
+    large_turn_accel_state = enable ? 1U : 0U;
+}
+
 void Mecanum_Init(void) {
     // 1. 初始化电机 GPIO (方向引脚)
     gpio_init(MOTOR_LF_DIR, GPO, 0, GPO_PUSH_PULL);
@@ -164,12 +169,21 @@ void Mecanum_Control_Loop(void) {
         float delta_vy = target_vel.vy - smooth_vy;
         float delta_speed = sqrtf(delta_vx * delta_vx + delta_vy * delta_vy);
         float max_delta_speed = MAX_ACCEL_LINEAR * CONTROL_DT;
+        uint8_t large_turn_state = large_turn_accel_state;
         float step_w = MAX_ACCEL_W * CONTROL_DT;
 
+        if (large_turn_state != 0U) {
+            max_delta_speed *= LARGE_TURN_ACCEL_SCALE;
+        }
         if (delta_speed > max_delta_speed) {
             float scale = max_delta_speed / delta_speed;
             delta_vx *= scale;
             delta_vy *= scale;
+            if (large_turn_state == 1U && large_turn_accel_state == 1U) {
+                large_turn_accel_state = 2U;
+            }
+        } else if (large_turn_state == 2U && large_turn_accel_state == 2U) {
+            large_turn_accel_state = 0U;
         }
         smooth_vx += delta_vx;
         smooth_vy += delta_vy;
@@ -183,6 +197,7 @@ void Mecanum_Control_Loop(void) {
         smooth_vx = 0.0f;
         smooth_vy = 0.0f;
         smooth_wz = 0.0f;
+        large_turn_accel_state = 0U;
     }
     
     // ==========================================================
