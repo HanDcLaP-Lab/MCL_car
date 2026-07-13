@@ -7,7 +7,7 @@ int rush_sign = 0;
 float dist_out = 0;
 volatile float visual_last_vx = 0.0f;
 volatile float visual_last_vy = 0.0f;
-volatile uint32_t dash_end_time = 0;          // 融合盲冲绝对结束物理时间
+volatile uint32_t dash_end_time = 0;          // 盲冲绝对结束物理时间
 volatile uint32_t rush_cooldown_end_time = 0; // 防重入冷却绝对结束时间
 
 // ================== 保质期槽位 (目标身份滤波) ==================
@@ -30,7 +30,10 @@ static uint8_t slot_check(Expiring_Slot_t *s) {
 }
 
 // ================== 视觉状态机共享静态变量 ==================
-static uint8_t  track_frames = 0;
+static uint32_t track_memory_ms = 0;
+static uint32_t track_memory_last_ms = 0;
+static uint32_t track_memory_step_ms = 0;
+static uint8_t  track_memory_started = 0;
 static uint8_t  zero_consecutive = 0;
 static float    prev_target_x = 0.0f, prev_target_y = 0.0f;
 static uint8_t  has_prev_target = 0;
@@ -86,6 +89,48 @@ static void State0_Handler(void);
 static void State12_Handler(uint8_t locked_state);
 static void State3_Handler(void);
 static uint8_t target_filter_update(uint8_t locked_state);
+static void Visual_Track_Begin_Frame(void);
+static void Visual_Track_Refresh(void);
+static void Visual_Track_Decay(void);
+static void Visual_Track_Clear(void);
+static uint8_t Visual_Track_Is_Locked(void);
+
+static void Visual_Track_Begin_Frame(void) {
+    uint32_t now = sys_time_ms;
+    if (!track_memory_started) {
+        track_memory_started = 1;
+        track_memory_last_ms = now;
+        track_memory_step_ms = 0;
+        return;
+    }
+
+    track_memory_step_ms = now - track_memory_last_ms;
+    track_memory_last_ms = now;
+    if (track_memory_step_ms > TRACK_MEMORY_MS) track_memory_step_ms = TRACK_MEMORY_MS;
+}
+
+static void Visual_Track_Refresh(void) {
+    uint32_t add_ms = track_memory_step_ms;
+    if (add_ms > TRACK_STEP_MAX_MS) add_ms = TRACK_STEP_MAX_MS;
+    if (track_memory_ms + add_ms > TRACK_MEMORY_MS) track_memory_ms = TRACK_MEMORY_MS;
+    else track_memory_ms += add_ms;
+}
+
+static void Visual_Track_Decay(void) {
+    if (track_memory_ms > track_memory_step_ms) track_memory_ms -= track_memory_step_ms;
+    else track_memory_ms = 0;
+}
+
+static void Visual_Track_Clear(void) {
+    track_memory_ms = 0;
+    track_memory_last_ms = sys_time_ms;
+    track_memory_step_ms = 0;
+    track_memory_started = 1;
+}
+
+static uint8_t Visual_Track_Is_Locked(void) {
+    return track_memory_ms >= TRACK_LOCK_THRESHOLD_MS;
+}
 
 // ================== 现有函数 (不变) ==================
 
@@ -203,7 +248,7 @@ static uint8_t target_filter_update(uint8_t locked_state) {
 // 状态 0：全丢 → 停车 + 清零
 static void State0_Handler(void) {
     Visual_Set_Velocity(0.0f, 0.0f, 0.0f);
-    track_frames = 0;
+    Visual_Track_Clear();
     has_prev_target = 0;
     dash_end_time = 0;
     visual_last_vx = 0.0f;
@@ -220,7 +265,7 @@ static void State0_Handler(void) {
 
 // 状态 1 或 2：单目标丢失
 static void State12_Handler(uint8_t locked_state) {
-    if (track_frames > 0) track_frames--;
+    Visual_Track_Decay();
     if (!target_filter_update(locked_state)) {
         Visual_Set_Velocity(0.0f, 0.0f, 0.0f);
         return;
@@ -269,7 +314,7 @@ static void State3_Handler(void) {
     // ==================== 盲冲触发 (距离低于阈值) ====================
     if (uart_data[7] > 0.01f && uart_data[7] < DASH_DIST_CM) {
         uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
-        if (dash_end_time == 0 && track_frames >= TRACK_FRAMES_LOCK_THRESHOLD && !is_cooldown) {
+        if (dash_end_time == 0 && Visual_Track_Is_Locked() && !is_cooldown) {
             float dash_vx = dash_dir_vx_est * TARGET_SPEED;
             float dash_vy = dash_dir_vy_est * TARGET_SPEED;
             float dash_dist_cm = dash_dist_est > 0.0f ? dash_dist_est : raw_dist;
@@ -296,7 +341,7 @@ static void State3_Handler(void) {
     // 有 pending 候选：adopted 未采纳新观测，方向保持冻结
     if (pending_angle.valid) {
         Visual_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
-        if (track_frames < TRACK_FRAMES_MAX) track_frames++;
+        Visual_Track_Refresh();
         return;
     }
 
@@ -316,7 +361,7 @@ static void State3_Handler(void) {
     prev_target_y = uart_data[3];
     has_prev_target = 1;
 
-    if (track_frames < TRACK_FRAMES_MAX) track_frames++;
+    Visual_Track_Refresh();
 }
 
 // ================== 公开函数 ==================
@@ -339,7 +384,7 @@ void Visual_State_Reset(void) {
     // 注意：不在此函数内清零 rush_cooldown_end_time。
     // rush_cooldown 是 dash 到期时由 1ms ISR 设置的 1 秒冷却期，
     // 其目的是防止 0 速度无限重入。若被一并清零，冷却形同虚设，
-    // 信标闪烁时 state 1 可无限触发新一轮盲冲。
+    // 信标闪烁时 state 3 可无限触发新一轮盲冲。
 }
 
 // ISR 级时间刹车检查：盲冲到期硬处理
@@ -367,6 +412,7 @@ void Visual_Control_Loop(void) {
 #endif
 
     if (!Chassis_Is_Armed()) return;
+    Visual_Track_Begin_Frame();
     uint8_t locked_state = (uint8_t)uart_data[5];
 
     // 连续两帧全丢（state 0）：信标确定熄灭，强制中断一切滑行/盲冲

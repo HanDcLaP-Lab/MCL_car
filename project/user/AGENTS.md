@@ -23,7 +23,8 @@
 9. seekfree_assistant_interface_init()  // 无线调参协议
 10. pit_ms_init(PIT_CH1, 200)           // 200ms 定时器 (主循环调试打印触发)
 11. pit_ms_init(PIT_CH0, 1)            // 1ms 定时器 (主控制循环)
-12. 进入主循环 for(;;)                   // 校准完成由 1ms ISR 自动清 DISARM_UNCALIBRATED 位解锁
+12. 校准完成后检查 TEST_MODE             // 为1时直接进入test_program_1，不进入正式主循环
+13. 进入主循环 for(;;)                    // TEST_MODE为0时执行正式控制
 ```
 
 ## ISR 分配表
@@ -46,8 +47,8 @@
 1. Parse_Board_Uart_Data()              // 排空FIFO并保留最新帧，锁存批次stop事件
 2. 无人机急停判断                       // 批次内任一car_en=0优先，下一批新帧才允许恢复
 3. 无人机通讯看门狗:
-   - 收到数据 → 喂狗清零，处理stop事件或最新普通帧
-   - 超时1000ms → Chassis_Block(DISARM_COMM_LOST)，卡住计数器
+   - 收到数据 → 记录 `last_drone_rx_time_ms`，处理stop事件或最新普通帧
+   - 当前时间距最后合法帧达到1000ms → Chassis_Block(DISARM_COMM_LOST)
    - 注意：重连只清 COMM_LOST 位，人工急停(DISARM_MANUAL)保持 → 不会自动跑起来
 4. seekfree_assistant_data_analysis()   // 无线调参数据处理
 5. 遍历参数更新标志 → Wireless_Update()   // 应用调参值
@@ -63,7 +64,7 @@
 | `board_rx_stop_pending` | `volatile uint8_t` | 本批次任一合法帧出现car_en=0 |
 | `board_rx_fifo_write_fail_count` | `volatile uint32_t` | UART ISR因FIFO满/忙写入失败计数 |
 | `temp_rx_dat` | `uint8_t` | UART1 单字节接收缓冲 |
-| `drone_timeout_cnt` | `static uint32_t` | 无人机通讯看门狗计数器 (main loop内) |
+| `last_drone_rx_time_ms` | `uint32_t` | 最近合法无人机数据包的物理时刻 (main局部变量) |
 
 ## ANTI-PATTERNS (本目录)
 

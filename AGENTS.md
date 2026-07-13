@@ -43,7 +43,7 @@ MCL_car/
 | 编码器读取 (4个电机) | `project/code/encoder.c` | 正交编码器 + 卡尔曼滤波 |
 | IMU / 陀螺仪 | `project/code/imu_car_rc.c` | IMU660RC，Kalman/Mahony 姿态融合和坐标系映射 |
 | 板间通讯 (接收无人机数据) | `project/code/car_board_comm.c` | UART1, 115200, AA55协议 |
-| 视觉追踪状态机 / 坐标变换 | `project/code/car_image.c` | Image_Solve()、State0~4、盲冲/滑行 |
+| 视觉追踪状态机 / 坐标变换 | `project/code/car_image.c` | Image_Solve()、State0~3、目标角度筛选与距离触发盲冲 |
 | 无线串口调试 / 调参 | `project/code/wireless_uart.c` | UART2, SEEKFREE无线模块 |
 | 卡尔曼滤波器 | `project/code/kalman_filter.c` | 一维，用于编码器平滑 |
 | 测试程序 | `project/code/test.c` | 19个底盘运动测试 |
@@ -78,20 +78,22 @@ PIT_CH0 ISR (1ms 硬实时):          car_image → Image_Solve()
 
 安全机制:
   - 无人机断连 → 1000ms看门狗 → 强制停车
-  - 目标丢失 → 最近1000ms内有可靠双目标跟踪才允许盲冲，否则滑行(coast)后停车
+  - 视觉置信时间上限1000ms，累计达到150ms后才允许近距dash；连续两次state0会停车
   - IMU未校准 → 主循环阻塞，不解锁电机
 ```
 
 ## CONVENTIONS
 
 - **实现复用与可读性**: 在能达到同样效果时，优先使用逐飞（ZF）库函数和项目已有实现，避免重复封装或手写替代；同时保持调用意图、命名和控制流清晰易读。
+- **最小且清晰的实现**: 实现代码时应尽可能简洁、优雅，在正确满足需求的前提下尽量缩小改动范围，避免不必要的抽象、重构和附带修改，同时保持良好的可读性。
+- **贴合现有代码风格**: 修改前先阅读相邻代码和同类实现；新增代码应遵循当前模块已有的代码组织、职责边界、初始化与调用顺序、命名习惯、注释风格、缩进和控制流表达。除非现有模式会导致明确问题，否则不要引入与仓库不一致的新风格；确需偏离时应说明原因。
 
 ### 命名规则
 - **函数**: `ModuleName_Action()` — 模块前缀 + 下划线 + PascalCase
   - `PID_Init()`, `Mecanum_Control_Loop()`, `Encoder_GetCount()`
   - 例外: `wireless_uart_*()` 系列继承逐飞库的 snake_case
 - **宏**: `MODULE_PREFIX_DETAIL` — 全大写 + 下划线
-  - `MOTOR_LF_PWM`, `CAR_L`, `MAX_ACCEL_X`, `BOARD_BAUDRATE`
+  - `MOTOR_LF_PWM`, `CAR_L`, `MAX_ACCEL_LINEAR`, `BOARD_BAUDRATE`
 - **类型**: `XXX_t` 后缀 (主流风格)
   - `PID_t`, `Target_t`, `IMU_Car_RC_Data_t`
   - 例外: `Encoder`, `KalmanFilter1` (无后缀)
@@ -119,7 +121,7 @@ PIT_CH0 ISR (1ms 硬实时):          car_image → Image_Solve()
 ### 错误处理
 - **初始化失败**: `while(1) { system_delay_ms(100); }` — 死循环等待
 - **通讯校验**: AA55头 + checksum 状态机 (car_board_comm.c)
-- **通讯超时**: 计数看门狗 → `Chassis_Block(DISARM_COMM_LOST);`
+- **通讯超时**: 毫秒计时看门狗 → `Chassis_Block(DISARM_COMM_LOST);`
 - **PID死区**: 误差 < 0.001 时清零积分并返回0
 - **电机死区**: 目标速度 < 0.01m/s 且误差 < 0.03 时输出0
 

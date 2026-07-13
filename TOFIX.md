@@ -1,123 +1,466 @@
-# TOFIX
+# 双端系统审查待修清单
 
-Verified unresolved defects in the current `MCL_car` and `../drone` working trees as of 2026-07-12.
+审查日期：2026-07-13
 
-Only reachable code defects and concrete control hazards are listed. Accepted behavior, parameter tuning, stale comments, disabled diagnostics, and speculative issues are omitted.
+审查范围：`drone` 与 `MCL_car` 当前工作区，重点覆盖初始化顺序、双核/中断协作、传感器新鲜度、视觉状态切换、串口通信、底盘使能与异常恢复。本文只记录能够由当前代码路径证实的风险，不包含单纯参数取舍或已经修复的问题。
 
-## P1 - Safety And Data Integrity
+## 现场现象索引
 
-### DR-02. TOF failure leaves altitude control armed on indefinitely stale data
+- **多信标连续换向（当前主问题）**：首要根因是 `CR-24` 缺少身份级关联；`CR-29` 会让换标后的 dash 继续使用旧方向，`CR-30` 的候选确认也不能保证连续看到的是同一盏灯。
+- **dash 偶发走歪、欠冲或过冲**：主要对应 `CR-25` 的开环距离/时间模型和 `CR-29` 的跨目标历史污染。
+- **无人机跟踪迟滞、停车后过冲**：主要由 `CR-26` 的两端动态能力不匹配与 `DR-16` 缺少速度状态/延迟预测叠加，`DR-15` 进一步增加观测相位误差。
+- **快速改变速度时掉高**：优先检查 `DR-13` 的多区TOF投影偏差和 `DR-18` 的高度估计/控制延迟；`DR-14/DR-17` 会在强横向动作时放大该现象。
 
-- Evidence:
-  - VL53L8CX initialization/configuration/start return values are printed or ignored, but failure does not prevent later arming: `../drone/project/code/tof.c:136-160`, `../drone/project/code/fly_ctrl.c:116-121`.
-  - Runtime ready-check and frame-read return statuses are ignored. Not-ready, failed, or zone-invalid frames return without invalidating height state or refreshing a health timestamp: `../drone/project/code/tof.c:180-192`.
-  - `imu_data.z`, `imu_data.vz`, and `tof_base_throttle` retain their last values, and the 800Hz flight loop continues using the stale throttle: `../drone/project/code/tof.c:99-117`, `../drone/project/code/fly_ctrl.c:170-179`.
-- Failure path: a sensor lockup, SPI fault, invalid-zone stream, or unsuccessful ranging start can leave the drone flying open-loop at the last collective output with no timeout, fallback, landing, or lock action.
-- Impact: altitude can drift or accelerate until another independent protection triggers; stale height also corrupts visual ground projection and state4 distance decisions.
-- Fix direction: track last valid TOF time and initialization health, gate arming on valid ranging, and enter an explicit bounded fallback/landing/lock state after a short freshness timeout.
+## P1：可能直接破坏飞行或停车安全
 
-### CR-05. Core0 writes back the Core1-owned vision cache lines
+### DR-02：TOF 缺少健康状态和数据新鲜度保护
 
-- Evidence:
-  - `share_data_from_1` is a 64-byte Core1-to-Core0 buffer: `../drone/project/code/data_complex.c:14-24`, `../drone/project/code/data_complex.h:36-52`.
-  - Core1 writes the frame and cleans the whole buffer: `../drone/project/user/main_cm7_1.c:90-93`.
-  - Core0 invalidates it, writes `S1_PROCESS_DONE=0`, then cleans the same whole buffer: `../drone/project/user/main_cm7_0.c:127-142`.
-  - Cortex-M7 cache lines are 32 bytes, so the acknowledgement shares a cache line with vision payload data.
-- Failure path: Core1 can publish a newer frame after Core0 invalidates but before Core0 cleans. Core0 then writes its older payload cache lines back over that frame.
-- Impact: a vision frame can be lost or internally mixed before it reaches hover control and the car; the later UART checksum cannot detect this corruption.
-- Fix direction: keep each shared cache line single-writer. Put acknowledgement in a separate Core0-owned line or replace the flag with an IPC/mailbox ownership handoff.
+**证据**
 
-## P2 - Runtime Control Defects
+- `drone/project/code/tof.c:136-160` 的初始化流程没有把关键返回值汇总成可供飞控使用的健康状态。
+- `drone/project/code/tof.c:180-192` 运行期读取失败后没有失效时间戳；最后一次高度可以继续留在控制链路中。
+- `drone/project/code/fly_ctrl.c` 和低高度保护主要检查高度数值，没有检查该高度距最后一次成功采样已经多久。
 
-### CR-13. Synchronous VL53L8CX SPI work runs in a same-priority 1ms ISR
+**失败路径**
 
-- Evidence:
-  - PIT channel 0 calls `tof_update()` every 1ms: `../drone/project/user/cm7_0_isr.c:49-58`.
-  - A ready frame is synchronously read and converted in that ISR: `../drone/project/code/tof.c:180-205`.
-  - The platform performs blocking SPI array transfers, and the SPI driver busy-waits byte by byte: `../drone/project/code/vl53l8cx/platform.c:74-101`, `../drone/libraries/zf_driver/zf_driver_spi.c:572-594`.
-  - PIT0 and the 800Hz flight PIT1 are both initialized at interrupt priority 3: `../drone/libraries/zf_driver/zf_driver_pit.c:163-204`.
-- Impact: a TOF frame can delay a coincident attitude-control tick because the flight ISR cannot preempt it. The blocking path is certain; its worst-case duration still needs scope measurement.
-- Fix direction: move frame transfer/processing out of the flight-critical ISR path, or use verified interrupt priorities/DMA so the 800Hz loop can preempt it.
+TOF 运行中掉线、SPI 读取失败或测距持续无效后，高度值可能保持在最后一次有效结果。无人机仍可能继续高度控制，小车低高度禁行也可能基于旧值作出判断。数值“看起来合理”时，现有范围判断无法识别它已经过期。
 
-### CR-14. TOF frame interval can truncate to zero after a long invalid gap
+**建议方向**
 
-- Evidence:
-  - The 32-bit tick difference is stored in `uint16_t`: `../drone/project/code/tof.c:22`, `../drone/project/code/tof.c:194-199`.
-  - Invalid frames return before updating `tof_last_ready_tick`: `../drone/project/code/tof.c:189-192`.
-  - The VL53L8CX path has no minimum `dt` clamp, and vertical speed divides by `dt`: `../drone/project/code/tof.c:101-103`, `../drone/project/code/tof.c:194-202`.
-- Failure path: after at least 65.536s without a valid frame, elapsed time wraps modulo 65536ms; recovery can produce a very small or zero `dt`.
-- Impact: zero `dt` can make vertical speed non-finite and poison the height PID state/output.
-- Fix direction: keep elapsed time in `uint32_t`, apply minimum/maximum bounds before division, and reset derivative/filter state after a long invalid period.
+记录最后一次有效测距时间和连续失败次数；超过短超时后禁止解锁或进入受控降落/锁定，同时明确区分“高度为零”和“没有新高度”。
 
-### DR-03. Vision hold reprojects old pixels with the current attitude
+### CR-05：Core0 会写回 Core1 正在更新的整块视觉共享缓存
 
-- Evidence:
-  - A missing beacon or car is marked valid for up to five frames while retaining its previous pixel center: `../drone/project/code/image.c:509-563`, `../drone/project/code/image.h:86-91`.
-  - `calculate_ground_positions()` treats held `car_valid/target_valid` exactly like a current observation and projects those old pixels using the new frame's height, roll, pitch, and yaw, then updates the Kalman filters: `../drone/project/code/image_process.c:170-227`.
-  - The held result drives hover control and is also downlinked to the car as a normal state1/3/4 coordinate: `../drone/project/code/image_ctrl.c:256-299`, `../drone/project/code/data_complex.c:136-152`.
-- Impact: during drone rotation/tilt or height change, a stationary stale pixel becomes a fabricated ground displacement. This can command a false roll/pitch correction and can make the car chase a stale beacon instead of entering its own coast logic.
-- Fix direction: keep raw-valid and held-valid semantics separate. Hold a ground-frame estimate without reprojecting it, and do not present held beacon data to downstream consumers as a fresh observation.
+**证据**
 
-### DR-04. Motor mixer clips each motor independently and loses requested control ratios
+- Core1 在 `drone/project/user/main_cm7_1.c:93-98` 写共享视觉数据并执行缓存维护。
+- Core0 在 `drone/project/user/main_cm7_0.c:127-142` 读取后清标志，并对包含视觉结果的共享区域执行整块写回。
+- 两侧没有序号、双缓冲或所有权交接；`image_ready` 只是单个标志位。
 
-- Evidence:
-  - Collective, roll, pitch, yaw, and static offsets are summed independently for each motor: `../drone/project/code/fly_ctrl.c:218-236`.
-  - Each result is then clamped separately to `[0, 8000]`: `../drone/project/code/fly_ctrl.c:238-243`, `../drone/project/code/fly_ctrl.h:10-14`.
-  - Rate PID outputs can each reach 3500 while collective is around 5150 plus height/tilt compensation, so saturation is reachable during a large attitude/rate error: `../drone/project/code/fly_ctrl.c:55-69`, `../drone/project/code/fly_ctrl.c:170-179`.
-- Impact: once one motor clips, differential torque and total thrust no longer match the controller request. Combined-axis corrections can lose roll/pitch authority or inject yaw/collective error exactly when recovery demand is highest.
-- Fix direction: add mixer desaturation/collective shifting with explicit axis priority, and feed saturation information back to PID anti-windup.
+**失败路径**
 
-### CR-07. A valid state4 can arm a timed dash with zero velocity
+Core0 读完旧帧后，Core1 可能已经开始写新帧；此时 Core0 的整块 cache clean 有机会把自己缓存中的旧 cache line 写回共享内存，覆盖 Core1 的新字段。结果可能是同一帧内位置、有效位、面积或状态来自不同代数据。
 
-- Evidence:
-  - `Visual_State_Reset()` clears `visual_last_vx/vy` and dash history but leaves `track_memory_ms` intact: `project/code/car_image.c:711-725`.
-  - A coast expiry calls that reset without starting dash cooldown: `project/code/car_image.c:738-743`.
-  - `State4_Handler()` checks only track memory and cooldown. If history estimation fails, it permits zero `dash_vx/vy`, changes only the divisor to `0.1f`, arms a 200-700ms timer, and publishes the unchanged zero vector: `project/code/car_image.c:655-700`.
-  - While that timer is active, later nonzero visual commands are ignored: `project/code/car_image.c:790-795`.
-- Impact: the car can stop near a valid beacon for the full dash interval, then continue after expiry, producing a repeatable stop-then-go discontinuity.
-- Fix direction: require a recent nonzero command or a valid history estimate before arming a dash; otherwise avoid creating the dash timer.
+**建议方向**
 
-### CR-15. The car main-loop watchdog automatically resumes an old command
+共享结果采用发布序号或双缓冲。消费者只清理由自己拥有的握手字段，不写回生产者拥有的数据 cache line。
 
-- Evidence:
-  - The 1ms ISR derives a local `armed` value from heartbeat age, but a timeout does not set a disarm reason or clear visual/velocity state: `project/code/mecnum.c:148-185`.
-  - While the heartbeat is stale, PWM is forced to zero: `project/code/mecnum.c:279-299`.
-  - On the next main-loop iteration, the heartbeat is refreshed before parsing/validation, so the ISR becomes armed again and ramps toward the still-stored `target_vel`: `project/user/main_cm4.c:88-98`, `project/code/mecnum.c:161-179`.
-- Failure path: any operation lasting more than `MAINLOOP_STALL_MS=10ms` causes a temporary hard stop; completion of that operation automatically restarts the prior command even without a fresh visual frame.
-- Impact: blocking print/parameter/parse work can create an unexplained periodic stop followed by continued motion, and a recovered software stall can resume stale movement.
-- Fix direction: latch a stall disarm reason and clear motion state; require a newly validated control packet or explicit rearm before motion resumes.
+### CR-19：两端 IMU 失去新数据后仍可保持已解锁状态
 
-## P3 - Narrow But Real Defects
+**证据**
 
-### DR-05. Vision-loss timeout is based on main-loop iterations, not elapsed time
+- 无人机 `drone/project/code/imu.c:297-358` 有原始数据变化统计，但没有形成飞控使用的数据新鲜度/健康标志；`fly_ctrl.c:116-121,247-267` 仍继续使用已有姿态和角速度。
+- 小车 `MCL_car/project/code/imu_car_rc.c:187-196` 遇到全零读取会直接返回，不清除校准完成状态，也不使当前姿态失效。
+- 小车 `MCL_car/project/code/mecnum.c:139-153` 的底盘使能主要取决于已有校准标志和外部停机原因，没有 IMU 更新超时。
 
-- Evidence: `vision_timeout_cnt` increments once per Core0 main-loop pass and trips at 400, while that loop also performs debug transport, parameter parsing, cache operations, UART transmission, and a 400us delay: `../drone/project/user/main_cm7_0.c:102-174`, `../drone/project/user/main_cm7_0.c:176-193`.
-- Impact: after Core1 stops publishing, the duration for which the last roll/pitch target remains active varies with debug and communication load. It is neither 400ms nor otherwise bounded by a physical clock.
-- Fix direction: store the last accepted vision timestamp from `dataC.pit0_cnt` and compare elapsed milliseconds.
+**失败路径**
 
-### CR-16. Two-frame state0 debounce counts parser batches rather than received frames
+传感器总线卡住、IMU 停止刷新或重复返回异常值时，两端都可能继续使用最后姿态。对无人机而言，这会直接破坏闭环稳定；对小车而言，场地坐标变换和限加速度方向会逐渐与真实朝向不一致。
 
-- Evidence:
-  - The UART parser drains all currently queued bytes and stores only the latest ordinary frame; only state4 and `car_en=0` receive dedicated event latches: `project/code/car_board_comm.c:83-100`, `project/code/car_board_comm.c:123-229`.
-  - `zero_consecutive` increments only when `Visual_Control_Loop()` is called for the retained frame: `project/code/car_image.c:753-787`.
-- Failure path: if two state0 packets arrive while the main loop is delayed, both can be collapsed into one call. A following nonzero packet resets the counter, so the documented two-frame state0 condition never fires.
-- Impact: a short but valid two-frame all-lost event may fail to interrupt coast/dash after receive backlog.
-- Fix direction: preserve a saturated consecutive-state0 count or stop event in the parser, then consume that event before normal visual processing.
+**建议方向**
 
-### CR-17. Wireless yaw-rate tuning updates variables that the active PID never rereads
+以成功读取时间戳和连续异常计数生成统一 IMU 健康状态。无人机超时必须锁定或进入明确的故障流程；小车超时应停车，并在重新完成连续有效采样前保持禁用。
 
-- Evidence:
-  - Channels 1-3 update `YAW_RATE_KP/KI/KD`: `project/user/main_cm4.c:219-229`.
-  - The main loop continuously copies wheel and yaw-hold gains into PID objects, but never copies the yaw-rate gains into `pid_yaw_rate`: `project/user/main_cm4.c:206-212`.
-  - `pid_yaw_rate` receives those values only once during `Mecanum_Init()`: `project/code/mecnum.c:115-122`.
-- Impact: the UI reports parameter updates, but yaw-rate tuning has no effect on the running controller, which can lead to false conclusions during stabilization work.
-- Fix direction: apply the updated gains to `pid_yaw_rate` atomically at the same synchronization point as the other PID parameters.
+### CR-24：小车/信标选择没有身份级锁定，角度门控不能阻止连续换标
 
-### CR-18. Velocity commands are published to the 1ms ISR as a non-atomic tuple
+**证据**
 
-- Evidence:
-  - Main-loop visual code calls `Mecanum_Set_Velocity()`, which writes `target_vel.vx`, `vy`, and `wz` as three separate stores: `project/code/mecnum.c:96-100`.
-  - The 1ms ISR reads those fields independently while updating the three smooth commands: `project/code/mecnum.c:161-179`.
-  - The visual stop epoch prevents an ISR stop from being overwritten by an in-progress visual frame, but it does not prevent the ISR from sampling an ordinary direction update between component stores: `project/code/car_image.c:42-76`.
-- Impact: one control tick can combine a new X component with an old Y/Z component. Acceleration limiting bounds the individual disturbance, but frequent direction changes can still inject avoidable wheel-target transients.
-- Fix direction: publish a complete command through a sequence-checked double buffer or another short software snapshot protocol, then have the ISR consume only a coherent tuple.
+- `drone/project/code/image.c:602-640` 每帧把当前候选中 `Area*sqrt(Ratio)` 得分最高者直接选为小车，没有与上一小车轨迹做空间关联。
+- 同文件 `646-695` 每帧重新选择离当前小车最近的信标，没有上一信标身份、挑战者确认或目标代次。
+- `drone/project/code/data_complex.c:99-118` 向小车发送的是本帧原始小车/信标坐标和0..3可见状态，协议没有携带目标身份或换标事件。
+- `MCL_car/project/code/car_image.c:179-241` 只比较新旧方向夹角：小于15.5度立即采纳，大于阈值则暂存一个 `pending_angle`；它既不检查候选空间连续性，也无法判断连续帧是否来自同一盏信标。
+
+**失败路径**
+
+多盏信标同时亮时，只要“离小车最近”的排名因检测闪烁、投影噪声或小车识别短暂变化而交换，无人机就会立即发布另一盏灯。两盏灯方向相近时，小车角度门控会把它当作同一目标直接接受；方向差较大时只会短暂冻结旧方向，旧角度到期后仍会采纳当时最新候选。它能延迟大角度跳变，却不能证明候选身份稳定，因此连续换向仍然是当前代码的确定性可能。
+
+**建议方向**
+
+在无人机固定地面系分别维护活动小车轨迹和活动信标轨迹，先按位置、形状和 missed 时间关联身份，再在关联结果中评分。换标必须由同一挑战者连续确认，并发布单调目标代次；小车只在代次变化时统一清除跟踪置信度和 dash 历史。
+
+### CR-29：换标不会清除 dash 历史，接近反向时可能沿旧方向盲冲
+
+**证据**
+
+- `MCL_car/project/code/car_image.c:38-45` 的方向、距离、接近速度及样本数都是跨帧静态状态，只在 state0、底盘复位或 dash 到期后清理。
+- `target_filter_update()` 采纳另一方向时没有发布“目标已切换”，`track_memory_ms`、`dash_dir_*_est`、`dash_dist_est` 和 `dash_speed_est` 均继续沿用旧目标历史。
+- `car_image.c:283-294` 每帧计算 `normalize(0.3*new + 0.7*old)`。若方向恰好从 `(1,0)` 变为 `(-1,0)`，混合结果是 `(0.4,0)`，归一化后仍为旧方向；后续帧会一直保持旧方向而不是逐渐反转。
+- 近距 dash 只检查累计置信时间、距离和冷却；换标本身不会重新累计150ms可信时间。
+
+**失败路径**
+
+小车刚换到另一盏近距离信标时，可以在第一批新目标帧中直接满足 dash 门槛，但方向和距离估计仍主要属于上一目标。大角度换向会造成明显滞后，接近180度时方向 EMA 甚至存在固定点，结果就是极低概率却后果明显的“向旧目标方向走歪”。
+
+**建议方向**
+
+引入明确目标代次。代次改变时一次性清空跟踪置信度及所有 dash 样本，并要求新目标重新积累至少150ms；方向与距离改用同一组4~6帧二维相对位置拟合，避免把归一化方向 EMA 当作跨大角度的状态估计。
+
+### CR-26：小车允许的换向加速度远超无人机的跟踪能力
+
+**证据**
+
+- `MCL_car/project/code/mecnum.h:13-22` 当前目标速度为0.75m/s、平移加速度上限为15m/s²；总速度矢量从正向0.75切到反向0.75理论上只需约0.1s。
+- `MCL_car/project/code/test.c:24-32` 的 `test_program_1()` 每个方向持续3.5s且中间停车2s，方向切换间隔远长于无人机约1.25s的理想反向时间，不能覆盖多信标连续换向工况。
+- `drone/project/code/fly_ctrl.h:13` 把无人机单轴目标倾角限制为7°，对应理想横向加速度约 `g*tan(7°)=1.2m/s²`；完成相同速度反向至少约1.25s，尚未计入姿态建立和视觉延迟。
+- `drone/project/code/image_ctrl.h:5-9` 当前关闭小车运动前馈，无人机只能在位置误差出现后追赶。
+
+**失败路径**
+
+即使两端代码和传感器完全正确，小车连续换向、突然停车或 `CR-24` 引发的目标方向切换也会超出无人机可跟踪轨迹集合。以0.75m/s为例，小车按15m/s²软件上限的理想制动距离约1.9cm，而无人机按7°对应的1.2m/s²横向加速度至少需要约23cm，尚未计入相机与姿态建立延迟。无人机会先积累位置误差，随后长时间顶着倾角上限追赶；小车已经停车/反向后，无人机还在消化延迟误差，于是表现为明显迟滞和过冲。持续大倾角也会放大 `DR-13/14/15` 的高度与姿态误差。实际电机/轮胎可能让小车达不到15m/s²，但软件没有保证这一点。
+
+**建议方向**
+
+为正式模式定义两端共享的速度、加速度和 jerk 包络，使小车生成的轨迹落在无人机可跟踪范围内；换标时尤其要做矢量速度过渡。可以根据无人机跟踪误差动态收紧小车加速度，并保留 test 模式的激进运动用于单独测试。若要提高无人机倾角上限，应先修正高度和姿态观测，再按实测推力余量评估，不能只靠提高位置 PID。
+
+### DR-10：`car_en` 默认已启用，未校准/调试状态仍可能让小车运动
+
+**证据**
+
+- `drone/project/code/data_complex.c:6` 将 `car_en` 初始化为 1；`fly_ctrl.c:46-50` 虽把无人机设为“等待校准后解锁”，却没有同步禁止小车。
+- `drone/project/user/main_cm7_0.c:96-147` 启动 PIT 后会在 IMU 约1.25s校准期间继续消费视觉帧并下传当前 `car_en`；发送条件没有检查 `imu_data.is_calibrated` 或 `flight_target.is_armed`。
+- `drone/project/code/fly_ctrl.c:116-121` 的自动解锁只检查 IMU 校准状态，不检查 `current_drone_state`；`Flight_Unlock()` 在 `73-76` 再次把 `car_en` 置为 1。
+- `drone/project/code/fly_ctrl.c:269-273` 在 DEBUG 模式只把无人机四电机输出置零，没有同步禁止小车。
+- `drone/project/user/main_cm7_0.c:127-147` 在 DEBUG 模式仍处理视觉帧并向小车发送完整控制包。
+
+**失败路径**
+
+正常启动时，在无人机自身尚未完成姿态校准、尚未真正解锁的窗口，Core0 已可能下发 `car_en=1`；若此时高度与视觉状态满足条件，小车可以先于无人机进入运动状态。以“视觉调试模式”启动后，IMU 校准完成仍会自动执行 `Flight_Unlock()`；只要无人机被举到低高度保护阈值以上，Core1 就可输出正常 state1/3，而无人机自身电机仍被调试模式强制为零。现有 `car_en` 因而不能可靠表达“无人机已具备带车运行条件”。
+
+**建议方向**
+
+将 `car_en` 初始值设为禁用，并从“正常飞行模式、IMU已校准、无人机已解锁且无急停”统一派生。DEBUG 模式必须始终发布禁用；从 DEBUG 或校准状态切到正常飞行时，在完成控制状态复位后最后一步再发布小车使能。
+
+### CR-22：接收帧以解析时刻判新，积压旧帧会被当作新帧执行
+
+**证据**
+
+- UART ISR 在 `MCL_car/project/user/cm4_isr.c:165-175` 只把字节写入 FIFO，没有记录字节或完整帧的到达时间。
+- `MCL_car/project/code/car_board_comm.c:180-216` 在主循环最终解析出合法包时才更新 `uart_data` 和 `board_rx_complete_flag`；`207-215` 的诊断间隔也使用此时的 `sys_time_ms`，因此无法区分刚到达的包与 FIFO 中积压的旧包。
+- `MCL_car/project/user/main_cm4.c:79-84` 在 IMU 校准期虽持续解析 FIFO，但不消费 `board_rx_complete_flag`；校准完成后又在 `89` 以当前时刻初始化通信计时，并在 `105-141` 把遗留帧当作新帧执行。
+- 运行期同样先在 `101` 排空 FIFO，再在 `113` 以解析完成时刻刷新 1000ms 通信看门狗，没有帧序号或接收时间来拒绝阻塞期间积压的旧帧。
+
+**失败路径**
+
+若无人机在校准末段或主循环短暂阻塞前发送过 `car_en=1` 的运动数据，随后停止发送，那么该帧会在较晚的解析时刻被视作“刚收到”。小车可能执行旧坐标，并从解析时刻重新获得最多 1000ms 的通信有效期，表现为沿过期方向运动后才停车。正常连续通信时 FIFO 末帧通常较新，因此该风险主要出现在发送端恰好中断、接收端阻塞或校准结束边界。
+
+**建议方向**
+
+在 ISR 侧至少记录最近接收字节时刻，最好由协议携带单调帧序号；解析后按到达时间/序号拒绝过期包。校准结束时显式丢弃校准期完成标志和视觉事件，只用校准完成后到达的新帧解除通信停机状态。
+
+## P2：会造成明显控制异常、错误恢复或实时性退化
+
+### CR-13：飞控 ISR 的时限依赖两个同步轮询外设
+
+**证据**
+
+- `drone/project/user/cm7_0_isr.c:49-58` 在 1ms PIT ISR 内执行 VL53L8CX 读取；底层 SPI 操作为同步轮询。
+- 当前4x4配置只启用目标数、距离和状态，驱动计算出的单帧结果区约128字节；8MHz SPI 仅线上传输就约128us，尚未计入寄存器地址、就绪轮询和软件开销。
+- 同文件 `62-80` 的 800Hz 飞控 ISR 每拍调用电机串口下发。
+- `drone/project/code/small_driver_uart_control.h:7-13` 配置 460800 波特率；单帧 11 字节在线路上的理论时间约为 239us，已占 1.25ms 周期约 19%。
+- `zf_driver_uart.c:326-349` 的逐字节发送等待发送状态，没有以飞控周期为界的截止保护。
+- 两个 PIT 使用相同中断优先级，长时间停留在其中一个 ISR 会推迟另一个。
+
+**失败路径**
+
+在TOF有新帧的毫秒内，仅两项串行总线的理论线上时间就约367us，另有IMU读取、结果解析和全部控制计算。TOF 一次慢读与电机 UART 等待叠加时，姿态控制周期产生抖动或漏拍；外设异常时影响会被进一步放大。它不一定每次都触发，但与现场出现的电机声突变和姿态突然恶化具有直接的风险关联。
+
+**建议方向**
+
+ISR 只触发/搬运有界数据。TOF 读取放到低优先级任务并带超时；电机命令使用 DMA/FIFO 或仅在 TX 可接收时提交，同时统计飞控实际周期和超时次数。
+
+### DR-13：VL53L8CX 多分区距离没有按各自射线投影到垂直高度
+
+**证据**
+
+- `drone/project/code/tof.c:30-73` 把 4x4 各分区的径向距离排序；当前 `TOF_TRIM_LO_PCT=50` 会丢弃较近的一半，再对较远分区求均值/中位数。
+- 同文件 `86-99` 把聚合后的一个距离统一乘以 `cos(roll)cos(pitch)`，等价于假定所有分区都是同一根中心光束。
+- 结果同时供 `109-117` 的高度串级 PID 和视觉地面投影使用。
+
+**失败路径**
+
+16个分区的视线方向并不相同。即使水平对着平地，外侧分区的径向距离也比中心分区长；丢掉最近50%会系统性偏爱这些远射线。无人机横向加速产生 roll/pitch、地面有坡度或视场中混有小车时，哪一半分区“最远”还会改变，单一余弦无法恢复每条射线的垂直交点。估计高度若短时升高，高度环会主动减小基础油门，形成快速变速时真实高度下降；同一偏差还会按比例放大视觉位置，增加跟踪误差。
+
+**建议方向**
+
+使用每个 zone 的已知视线方向，把有效距离逐点变换到机体/地面系后再做鲁棒聚合，优先拟合地面平面并排除小车近点。若暂时保持简洁实现，也应只选经过标定的中心区域并逐区做方向余弦修正，而不是直接对未校正距离排序。测试时同步记录16区原始距离、逐区垂直高度、姿态和最终高度，做定高倾斜扫描验证。
+
+### DR-14：无人机姿态融合的运动降权无法识别模长接近 1g 的水平加速度
+
+**证据**
+
+- `drone/project/code/imu.c:193-205` 只按 `|norm(acc)-g|` 调整 Mahony 加速度权重；偏差小于 `0.4m/s²` 时完全信任。
+- 同文件 `225-239` 在同一条件下还会积累 `exInt/eyInt`，注释声称“仅静止时累积”，但代码没有静止或方向创新判断。
+- 当前最大目标倾角为7°，对应水平加速度约 `g*tan(7°)=1.2m/s²`；其加速度模长只比重力大约 `0.073m/s²`，因此现有门槛仍给满权重。
+- 小车已有可借鉴实现：`MCL_car/project/code/imu_car_rc.c:121-130` 额外按测量重力与预测重力的方向创新降权。
+
+**失败路径**
+
+持续追车或快速换向时，水平运动加速度会改变加速度计方向却几乎不改变模长。无人机融合器会把它当作重力方向，逐步拉偏 roll/pitch，并把误差积入长期项；姿态环、TOF 倾角补偿和视觉投影随后同时使用这份偏差。表现可以是跟踪迟滞、换向后的姿态回正慢，以及横向加速同时出现高度扰动。
+
+**建议方向**
+
+优先复用小车现有的方向创新权重，并让积分项只在低角速度、低控制加速度且持续稳定时更新，必要时加入缓慢泄漏。方向门控需保留真实姿态误差的恢复能力，可结合目标倾角/角速度而不是仅设固定死区；先记录 `acc_norm`、方向创新、权重、目标/实际姿态验证阈值。
+
+### DR-15：图像没有曝光时间戳，地面投影使用的是帧完成后的姿态
+
+**证据**
+
+- `drone/libraries/zf_device/zf_device_mt9v03x.c:70-78` 只在整帧搬运完成后复制图像并置 `mt9v03x_finish_flag`，没有记录曝光或帧开始时刻。
+- `drone/project/user/main_cm7_1.c:71-83` 看到完成标志后才从 Core0 获取最新 roll/pitch/yaw/height，并称其为本帧快照。
+- `drone/project/code/image_process.c:179-245` 用这组较晚姿态投影已经采集完成的像素。
+
+**失败路径**
+
+相机约50Hz，快速换向时图像观测与所用姿态可相差一段曝光/读出/调度延迟。若姿态变化率为100°/s，20ms错位就是2°；在120cm高度，仅中心附近就可产生约4cm虚假位移，边缘更大。误差方向与无人机自身转向相关，会被位置环误判成小车移动，造成迟滞、过冲或换向瞬间的错误纠正。
+
+**建议方向**
+
+在帧开始/曝光事件记录 `pit0_cnt`，Core0保留短 IMU/高度时间序列，Core1按图像时刻插值姿态。若硬件只能提供帧完成事件，至少实测并补偿固定采集延迟，同时把处理完成时间与曝光时间分开传递和统计。
+### DR-16：视觉位置环没有目标速度状态或采集延迟预测
+
+**证据**
+
+- `drone/project/code/image_ctrl.c:90-120` 只对小车位置做一阶标量 Kalman，滤波器没有速度状态。
+- 同文件 `125-155` 直接把延迟位置误差送入非线性 PID；D项只能对相邻延迟位置做差，不能区分小车速度、无人机速度和观测延迟。
+- `drone/project/code/image_ctrl.h:5-9` 的前馈当前关闭；现有前馈即使打开也只假定小车按固定速度沿信标方向运动，不使用实测多帧速度，且速度常量40cm/s与当前小车75cm/s目标不一致。
+
+**失败路径**
+
+小车起步时，无人机必须等相对位置误差形成后才倾斜追赶；小车停车时，控制器看到的仍是较早位置，无人机继续加速，随后再用反向误差刹车。相机50Hz、`DR-15` 的姿态错时和位置滤波叠加后，迟滞与过冲是控制结构的固有结果。目标方向频繁改变时，位置微分还会把身份切换/投影噪声当成速度。
+
+**建议方向**
+
+在固定地面系用带速度状态的常速度 Kalman 或简洁 α-β 滤波器估计小车位置与速度，并按“曝光时刻到当前控制时刻”的总延迟向前预测。位置误差负责恢复相对位置，测得的相对速度负责阻尼，小车速度/加速度只作为受限前馈；输出再经过统一的加速度和 jerk 限制。不要直接启用当前固定40cm/s的前馈函数。
+
+### DR-17：7°目标倾角按轴限幅，对角运动合成倾角可达约9.9°
+
+**证据**
+
+- `drone/project/code/fly_ctrl.c:68-69` 给视觉X/Y两个 PID 各自设置7°输出上限。
+- 同文件 `104-107` 又分别把 roll、pitch 钳到 `[-7°,7°]`，没有对二维倾角矢量做合成限幅。
+
+**失败路径**
+
+对角位置误差较大时，roll和pitch可同时达到7°；真实合成倾角为 `acos(cos7°·cos7°)≈9.9°`，超过“目标倾角上限7°”的设计意图。对角换向因而比单轴运动具有更大的水平加速度、姿态变化和垂直推力需求，也会放大TOF姿态相关误差，造成方向相关的跟踪/掉高差异。
+
+**建议方向**
+
+优先在固定地面系对期望水平加速度矢量做模长限制，再换算为roll/pitch；若保持当前小角度接口，也应在 `Set_Target_Attitude()` 中按二维模长等比例缩放，确保任意方向的合成目标倾角不超过7°。各轴 PID 的独立上限只能作为数值防护，不能替代总倾角约束。
+
+### DR-18：TOF-only 高度速度估计层叠低通，快速变速后的掉高只能滞后纠正
+
+**证据**
+
+- `drone/project/code/tof.c:92-107` 先以 `alpha=0.2` 对高度做 EMA，再对该滤波高度差分得到爬升率，并对爬升率再做一次 `alpha=0.2` 的 EMA。
+- 同文件 `109-117,180-202` 的高度位置环和速度环只在约50Hz的新 TOF 帧到来时更新；两帧之间一直保持上一次 `tof_base_throttle`。
+- `drone/project/code/fly_ctrl.c:164-179` 的800Hz高度路径只按当前roll/pitch做稳态几何倾角补偿，没有垂向加速度反馈；`imu.c:260-284` 也明确不再让加速度参与Z轴估计。
+
+**失败路径**
+
+无人机快速建立或反转横向速度时，电机差动、姿态建立过程和实际推力动态会产生短时垂向速度。当前倾角补偿只能补偿理想稳态下的推力方向，剩余掉高必须等TOF高度先经过一次低通、差分后再经过第二次低通才会进入速度环，因此至少滞后数个测距帧。现场会表现为快速换向时高度先下降、随后才缓慢追回；`DR-13` 若同时把倾斜时的距离估高，还会让高度环短时主动减小油门，进一步放大下降。
+
+**建议方向**
+
+先修正 `DR-13` 并同步记录原始分区距离、最终高度、爬升率、基础油门、倾角补偿以及目标/实际姿态，区分“测高误判”和“真实垂向扰动”。在确认测高可信后，减少高度与速度估计的重复相位延迟，并借鉴本地 `无名飞控` 的垂向加速度反馈或采用简洁的加速度高频、TOF低频互补估计；不需要直接移植完整EKF。
+
+### DR-07：解锁/模式切换先发布可运行状态，再清控制历史
+
+**证据**
+
+- `drone/project/code/fly_ctrl.c:73-92` 的 `Flight_Unlock()` 先写入解锁状态，后清 PID 与目标历史。
+- `drone/project/code/fly_ctrl.c:116-141,270-278` 在调试状态下内部状态仍会推进到解锁和油门爬升阶段，只是最终输出被抑制。
+- `drone/project/code/app.c:28-35` 从调试切到正常模式时，先修改应用模式，再执行后续解锁流程；主循环与飞控 ISR 之间没有临界区。
+
+**失败路径**
+
+飞控 ISR 可能在“已解锁但历史尚未清完”的窄窗口读取旧积分、旧目标或已经爬升的内部油门，产生一个控制周期的错误输出。模式切换也可能直接继承调试阶段已经推进的状态。
+
+**建议方向**
+
+先在锁定状态下完成全部状态复位和目标初始化，最后一步再发布解锁；模式切换采用同样的单向提交顺序。
+
+### CR-20：视觉复位没有清除近期跟踪记忆
+
+**证据**
+
+- `MCL_car/project/code/car_image.c:99-132` 以 `track_memory_ms` 累积最多1000ms可信时间，并在达到150ms后允许 dash。
+- 同文件 `370-384` 的 `Visual_State_Reset()` 会清除 dash 方向、距离和速度估计，但没有调用 `Visual_Track_Clear()`。
+- `MCL_car/project/code/chassis_arm.c:21-33,52-61` 在停机和重新武装时都会调用该视觉复位。
+
+**失败路径**
+
+通信超时、人工急停或无人机停止使能后若很快恢复，停机前的 `track_memory_ms` 仍然保留。恢复后的第一批 state3 只要距离小于50cm，就可能无需重新积累150ms双目标观测而直接 dash。低高度持续保护会经 state0 调用 `Visual_Track_Clear()`，因此低高度恢复已经不属于这条路径。
+
+**建议方向**
+
+区分“dash 到期后的局部清理”和“停机/重新武装的完整失效”。由安全停机触发的复位必须同时清除跟踪时间及其时钟状态；正常 dash 到期是否保留置信度可单独决定。
+
+### CR-25：dash 的距离、方向和速度估计不在同一模型内，开环时长难以稳定
+
+**证据**
+
+- `drone/project/code/data_complex.c:99-118` 下传0..3号坐标为未滤波相对坐标，但7号距离来自无人机端小车/信标 Kalman 结果。
+- `MCL_car/project/code/car_image.c:283-312` 用原始坐标形成的角度做方向 EMA，却对已经滤波的7号距离再次做距离 EMA和帧差速度 EMA，三者相位与历史并不一致。
+- 同文件 `315-338` 用7号距离的单次阈值触发 dash；接近速度样本不足时直接假定 `TARGET_SPEED`，足够时使用距离差估计，再把时长固定钳位到200~700ms并减去50ms。
+- 实际车速还受二维加速度限制、轮速闭环和打滑影响；dash 期间没有用编码器累计实际行程，结束后也仍需从当前 `smooth_vx/vy` 减速。
+
+**失败路径**
+
+缩短中的距离经过两层滤波通常偏大，容易把剩余路程估长；一次距离突降又会把接近速度估高，导致时长偏短。车辆刚换向或尚未达到目标速度时，按估计接近速度换算的固定开环时间容易欠冲；接近目标但滤波距离仍偏大时又容易过冲。200ms下限和700ms上限只能限制后果，不能同时消除两端误差。
+
+**建议方向**
+
+按目标代次保存最近4~6帧原始相对二维向量，先用无人机yaw旋转到固定地面系，再以真实时间戳拟合 `r(t)=a+vt`。无人机平移会在“信标减小车”的相对向量中抵消；拟合可同时给出当前方向、距离和闭合速度 `-dot(r,v)/|r|`。触发后将方向锁存到车体系，并用编码器沿该方向累计实际行程或按剩余距离与制动距离刹停，最大时长只保留为故障上限。
+
+### CR-30：角度候选首次采纳会停一帧，pending 也没有同候选连续确认
+
+**证据**
+
+- `MCL_car/project/code/car_image.c:207-228` 在修改 `adopted_angle` 前先缓存 `adopted_ok`。首次采纳 `latest_angle` 后没有把该局部值更新为真，函数仍会落到末尾清零速度并返回失败；下一帧才开始运动。
+- 当夹角超过阈值时，`pending_angle = latest_angle` 每帧直接覆盖。代码没有检查本帧 pending 是否与上一帧 pending 属于同一方向，也没有连续帧数或持续时间。
+- 旧 `adopted_angle` 到期后，当前 `latest_angle` 会在同一分支被直接采纳，pending 的存在并不构成确认门槛。
+
+**失败路径**
+
+每次上电、state0清理或完整复位后的首个有效双目标帧都会产生一次不必要的零速度发布。多信标交替出现时，pending 看似提供600ms保护，实际上只保存“最后看到的不同方向”；到期瞬间可以采纳一个只出现一帧的候选，造成固定短停或换向。
+
+**建议方向**
+
+首次采纳后立即按新状态返回有效。pending 应保存候选方向中心和连续确认时间，只有新观测仍落在同一候选门内才累计；候选变化时重新开始，确认完成后再提交一次目标代次切换。
+
+### CR-31：原始坐标直接驱动正常追点，小抖动会绕过身份门控进入速度方向
+
+**证据**
+
+- 无人机把原始小车/信标坐标发送给小车，保留了识别突变信息，这是身份判定所需的。
+- `MCL_car/project/code/car_image.c:179-241` 只拒绝超过15.5度的方向变化；阈值以内的原始角度每帧都会刷新 `adopted_angle`。
+- `State3_Handler()` 随后按该角度立即生成固定模长速度，没有对“已被身份门控接受的相对二维向量”再做连续滤波。
+- dash 又使用无人机端 Kalman 距离，正常方向与dash距离因此具有不同相位。
+
+**失败路径**
+
+保持原始数据有利于发现换标，但像素、姿态和TOF投影造成的15.5度以内抖动会直接变成速度方向变化。加速度限制只能限制速度矢量变化速率，不能区分真实转向和测量噪声；无人机跟踪会看到额外的小车横向扰动，近距离dash也会使用一组相位不一致的方向与距离。
+
+**建议方向**
+
+保留原始坐标专用于身份门控；候选被接受后，在小车端按目标代次维护唯一一组二维相对位置滤波（简洁的alpha-beta或现有Kalman均可），正常追点和dash都从这组状态读取。目标代次变化时重置滤波，不能把旧目标滤波状态带到新目标。
+
+### CR-23：主循环看门狗解除后会自动恢复旧速度指令
+
+**证据**
+
+- `MCL_car/project/code/mecnum.c:148-154` 只用局部 `main_alive` 临时折叠底盘武装条件；超时不会置入一个需要主循环用新帧解除的停机原因。
+- 同文件 `181-185,280-284` 在超时期间只清平滑速度和当前电机输出，没有清除 `target_vel`、视觉状态或旧指令代次。
+- `MCL_car/project/user/main_cm4.c:93-101` 在每轮最前面先刷新心跳，随后才解析并确认是否有新无人机帧。
+
+**失败路径**
+
+主循环若因无线输出、参数解析或一次异常耗时而停顿超过 `MAINLOOP_STALL_MS`，1ms ISR 会先把电机输出切零；主循环一恢复，循环开头立即刷新心跳，下一次 ISR 就重新武装并从仍保留的 `target_vel` 起步，即使此时没有收到任何新控制帧。外观上会形成一次短暂停车后沿旧方向继续，且若停顿期间发送端已经失联，恢复动作仍可早于 1000ms 通信看门狗。
+
+**建议方向**
+
+把主循环超时作为锁存的停机事件，并使旧视觉速度失效；只有主循环恢复后解析到一帧新的合法控制包，才能清除该事件。实现时仍可让 ISR 负责立即切断输出，主循环只负责基于新帧完成恢复握手。
+
+## P3：边界条件、诊断能力或低概率竞态
+
+### DR-12：阈值参数与查找表可能在按键中断下永久失配
+
+- `drone/project/user/cm7_1_isr.c:64-70` 在 10ms PIT ISR 中调用 `Key_Switch_Param_Edit()`，该函数会修改普通全局浮点数组 `debug_params`。
+- `drone/project/user/main_cm7_1.c:88-90` 没有先做参数快照，而是先用一次 `debug_params[0]` 重建 `thresh_by_rho2[]`，随后再次读取它并写入 `cam_down.threshold_max`。
+- 若按键 ISR 落在这两次读取之间，LUT会按旧值生成，`threshold_max`却记录新值；下一帧比较时两者表面相等，因此不会自动修复，直到参数再次变化。
+
+该问题只在现场按键调阈值时触发，但会让显示/保存的阈值与实际二值化阈值不一致，造成难以解释的识别变化。应在主循环一次读取快照，再用同一个值更新LUT和状态；ISR共享参数也应具备明确的 `volatile`/提交语义。
+### CR-14：TOF 有效帧间隔被截断为 16 位
+
+`drone/project/code/tof.c:195` 将时间差保存为 `uint16_t`。连续失效超过 65.536s 后重新得到有效帧，间隔会回绕，极端情况下可成为零，导致滤波/速度估计把长时间断流当作极短周期。应使用 32 位时间差并对过长间隔重新初始化滤波。
+
+### DR-05：无人机视觉失联超时依赖主循环次数
+
+`drone/project/user/main_cm7_0.c` 的视觉等待/失联判断以循环累计值推进。无线发送、参数处理或其他主循环负载变化会改变真实超时时间。应记录最后一帧共享数据的 `dataC.pit0_cnt`，以物理时间决定失效。
+
+### DR-08：电机反馈 UART 中断回调接错外设
+
+**证据**
+
+- `drone/project/code/small_driver_uart_control.h:7-13` 和对应 `.c:171-175` 使用 UART2 并开启接收中断。
+- `drone/project/user/cm7_0_isr.c:192-205` 的 UART2 ISR 调用 GNSS 回调，而 `251-264` 的 UART6 ISR 才调用电机反馈回调。
+- 当前 `NOTCH_ENABLE=0`，所以控制暂时不依赖该反馈；但反馈解析、转速诊断及以后启用陷波都拿不到正确数据。
+
+**建议方向**
+
+按实际 UART 实例重新绑定回调，并用接收计数/帧校验确认 ISR 确实消费 UART2 数据。
+
+### DR-09：摄像头采集与 Core1 处理共享同一可变帧缓冲
+
+**证据**
+
+- `drone/libraries/zf_device/zf_device_mt9v03x.c:58-78` 的采集回调直接更新 `mt9v03x_image` 并设置完成标志。
+- `drone/project/user/main_cm7_1.c:71-98` 清标志后直接处理同一个缓冲。
+- `drone/project/code/image.c:94-100,315-368` 的图像流程会读取并原地清理部分像素。
+
+**失败路径**
+
+若一次处理跨过下一帧约 20ms 的到达时刻，采集端会在算法尚未结束时覆写同一图像；算法自身的原地清理也可能与采集写入交错，形成撕裂帧。单完成标志无法描述“缓冲仍在使用”。
+
+**建议方向**
+
+使用双帧缓冲并在帧边界交换所有权，或至少让处理始终读取一份不会被 DMA/回调覆写的快照。
+
+### DR-19：现有高速诊断路径不能正确测量 ISR 时限和掉高链路
+
+**证据**
+
+- `drone/project/user/main_cm7_0.c:53-54` 把 `DEBUG_PROBE` 注释为“高=ISR执行中”，但实际在 `103,192` 围住的是整个Core0主循环。
+- `drone/project/user/cm7_0_isr.c:49-59` 真正TOF ISR中的探针拉高/拉低均被注释，当前没有直接测量TOF或800Hz飞控ISR执行时间的探针。
+- `drone/project/code/debug_data.c:34-44` 的高速缓存只记录三个姿态角和四路电机反馈转速；这些转速又受 `DR-08` 的错误UART回调影响，且没有TOF分区、高度、目标姿态或基础油门。
+
+**失败路径**
+
+当前探针高脉冲同时包含主循环工作和期间抢占它的ISR，低脉冲还包含固定400us延时，不能由波形反推出单个ISR耗时或漏拍。高速缓存即使临时启用，也无法区分“TOF测高突然变大导致减油”“真实垂向速度下降”与“姿态/电机响应异常”。因此可能错误排除 `CR-13/DR-13/DR-18`，或把同一现场现象归到错误模块。
+
+**建议方向**
+
+复用现有探针但明确分工：用独立引脚或DWT周期计数分别测TOF ISR与800Hz飞控ISR，并统计最大值/超期次数。按一次实验的假设临时调整现有 `debug_data` 字段，至少同步采集目标/实际roll-pitch、高度、vz、基础油门和TOF有效状态；在修复 `DR-08` 前不要把四路接收转速当作有效证据。
+
+### CR-16：state0 的“两帧去抖”按解析批次而非接收帧计数
+
+`MCL_car/project/code/car_board_comm.c` 会在一次调用中消费 FIFO 内多帧，只保留最终普通状态；`car_image.c:633-691` 的 state0 连续计数因此按主循环调用推进。两帧 state0 若同批到达只算一次，中间夹有非零帧但最终仍为 state0 时也可能被折叠。若该去抖用于安全停车，应在解析器中按每个完整帧更新事件计数或序号。
+
+### CR-17：无线修改 yaw-rate 参数后没有同步运行中 PID
+
+`MCL_car/project/user/main_cm4.c:204-208` 每轮只把轮速与 yaw-hold 参数复制到运行中 PID；`215-225` 虽会更新 `YAW_RATE_KP/KI/KD`，却没有同步 `pid_yaw_rate`。界面显示值可以变化，实际 yaw-rate 内环仍使用旧参数，容易造成现场调参误判。应在统一参数提交点一次性更新对应 PID。
+
+### CR-18：目标速度三元组跨主循环和 ISR 非原子更新
+
+`MCL_car/project/code/mecnum.c:96-100` 在主循环依次写 `target_vel.vx/vy/wz`，控制 ISR 在 `161-180` 分别读取。中断可落在任意两个写操作之间，得到新旧混合的一组速度；快速换向时会形成一个控制周期的错误方向。可用极短临界区或双缓冲加提交序号一次发布完整三元组。
+
+### CR-21：`disarm_flags` 的读改写可能丢失并发停机原因
+
+**证据**
+
+- `MCL_car/project/code/chassis_arm.c:38-61` 通过普通的 `|=`/`&=~` 修改同一个字节，没有临界区。
+- IMU 校准完成时，ISR 路径会在 `MCL_car/project/code/mecnum.c:139-145` 清除未校准位；主循环在 `main_cm4.c:105-153,215-240` 同时可能设置或清除通信、无人机停止或人工急停等其他位。
+
+**失败路径**
+
+两个上下文同时执行读改写时，后写回的一方可覆盖另一方刚设置的停机位。窗口很短，主要集中在启动校准完成或状态恢复时，但后果是底盘提前使能。
+
+**建议方向**
+
+在修改标志字节时使用短临界区，或让单一上下文拥有该变量、其他上下文只发布事件。
+
+## 已核对的可借鉴实现
+
+- 本地 `无名飞控/fc_driver/control/position_ctrl.c:160-243` 使用位置→速度→加速度→倾角串级，并以实测速度决定刹停点；`altitude_ctrl.c:176-190` 还有垂向加速度反馈；`algorithm/sins.c:122-168` 保存历史状态并用延迟观测修正对应时刻。可借鉴其状态分层、真实 `dt`、延迟同步和刹停逻辑，不宜直接复制参数或完整框架。
+- [SORT 原始论文](https://arxiv.org/abs/1602.00763) 的核心是先进行“检测到轨迹”的数据关联，再用 Kalman 维护轨迹；这支持 `CR-24` 的身份门控/丢失宽限方向。当前只有少量信标，不需要完整匈牙利算法，一个带空间门控的单活动轨迹即可。
+- [PX4 多旋翼控制结构](https://docs.px4.io/v1.14/en/flight_stack/controller_diagrams) 与[当前 PositionControl 源码](https://github.com/PX4/PX4-Autopilot/blob/main/src/modules/mc_pos_control/PositionControl/PositionControl.cpp)采用位置产生速度、速度产生加速度/推力，并在矢量层统一处理倾角与推力限制；[jerk-limited 轨迹](https://docs.px4.io/main/en/config_mc/mc_trajectory_tuning)用于避免方向命令阶跃。这支持 `CR-26`、`DR-16`、`DR-17` 的修复方向。
+- [PX4 EKF 延迟融合说明](https://docs.px4.io/main/en/advanced_config/tuning_the_ecl_ekf)要求按传感器时间戳缓存并在延迟时间轴融合；视觉系统另有明确的[采集延迟参数与调试方法](https://docs.px4.io/v1.14/en/ros/external_position_estimation)。当前系统无需移植 EKF，但应借鉴“曝光时刻而非到达时刻”的原则处理 `DR-15`。
+- ST 官方资料确认 VL53L8CX 是具有[4x4/8x8独立分区和65°对角FoV](https://www.st.com/en/imaging-and-photonics-solutions/vl53l8cx.html)的深度传感器，[4x4 zone 映射](https://www.st.com/content/st_com/en/technical-documents/DS14161.html)也明确为16个空间区域。这支持 `DR-13` 中逐分区射线建模，而非把16个距离当作同轴测量。
+
+## 已反向验证并移除/不记录的项目
+
+- DR-04 的独立电机限幅在当前电机余量下不会进入饱和，不作为现阶段问题。
+- 小车在 IMU 启动校准期间持续解析板间 UART，不存在“校准期间 FIFO 必然积满”的正常路径；`CR-22` 只保留校准边界和阻塞后旧帧缺少到达时间这一真实风险。
+- 当前启用的 UART、SPI 和电机/RS485 GPIO 配置未发现直接复用冲突。
+- 低高度连续5帧后会清除无人机视觉位置历史并发布state0，恢复后的首个有效位置直接初始化Kalman；这条启动残留路径已修复，不再列为待修问题。
+- `TEST_MODE` 默认关闭；开启时在校准后直接进入 `test_program_1()`，正式视觉、通信和主循环心跳路径均不可达，因此不把测试模式与正式逻辑的交互列为问题。

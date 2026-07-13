@@ -149,29 +149,30 @@ void Mecanum_Control_Loop(void) {
     // car_en 处理与通信看门狗(都在主循环里)都无法执行，动力会失控。
     // 此处在 1ms ISR 内直接判定：超过 MAINLOOP_STALL_MS 未刷新心跳 → 视为未武装，
     // 强制切断动力。armed 折入现有武装判据，避免从 ISR 改写 disarm_flags 引入新竞态。
-    uint8_t main_alive = ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) <= MAINLOOP_STALL_MS);
+    uint8_t main_alive = TEST_MODE ||
+        ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) <= MAINLOOP_STALL_MS);
     uint8_t armed = (Chassis_Is_Armed() && main_alive);
 
-    // ISR 级时间刹车检查 (dash/coast/merge 到期处理)，由 car_image.c 实现
+    // ISR 级时间刹车检查 (dash 到期处理)，由 car_image.c 实现
     Visual_Brake_Check();
     // ==========================================================
     // 【核心一】只对“用户目标指令”进行斜坡平滑 (防起步打滑)
-    // 根据设定的最大加速度，限制每 1ms (CONTROL_DT) 的速度变化量
+    // 平移速度按总加速度模长限幅，转向时不改变速度增量方向
     // ==========================================================
     if (armed) {
-        float step_x = MAX_ACCEL_X * CONTROL_DT;
-        float step_y = MAX_ACCEL_Y * CONTROL_DT;
+        float delta_vx = target_vel.vx - smooth_vx;
+        float delta_vy = target_vel.vy - smooth_vy;
+        float delta_speed = sqrtf(delta_vx * delta_vx + delta_vy * delta_vy);
+        float max_delta_speed = MAX_ACCEL_LINEAR * CONTROL_DT;
         float step_w = MAX_ACCEL_W * CONTROL_DT;
 
-        // X轴 (前后) 速度平滑
-        if (target_vel.vx > smooth_vx + step_x) smooth_vx += step_x;
-        else if (target_vel.vx < smooth_vx - step_x) smooth_vx -= step_x;
-        else smooth_vx = target_vel.vx;
-
-        // Y轴 (左右) 速度平滑
-        if (target_vel.vy > smooth_vy + step_y) smooth_vy += step_y;
-        else if (target_vel.vy < smooth_vy - step_y) smooth_vy -= step_y;
-        else smooth_vy = target_vel.vy;
+        if (delta_speed > max_delta_speed) {
+            float scale = max_delta_speed / delta_speed;
+            delta_vx *= scale;
+            delta_vy *= scale;
+        }
+        smooth_vx += delta_vx;
+        smooth_vy += delta_vy;
 
         // Z轴 (自转) 速度平滑：注意，这里只平滑外部下发的目标 target_vel.wz
         if (target_vel.wz > smooth_wz + step_w) smooth_wz += step_w;

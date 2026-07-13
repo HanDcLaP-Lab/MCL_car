@@ -83,7 +83,10 @@ int main(void)
     }
     // 底盘解锁由 1ms ISR 在 IMU 校准完成时自动处理 (Chassis_Unblock(DISARM_UNCALIBRATED))
 
-    //test_program_1();
+    if (TEST_MODE) {
+        test_program_1();
+    }
+    uint32_t last_drone_rx_time_ms = sys_time_ms;
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
@@ -101,8 +104,6 @@ int main(void)
         }
         
 
-        static uint32_t drone_timeout_cnt = 0; // [新增] 无人机通讯看门狗计数器
-
         if (board_rx_complete_flag) {
             board_rx_complete_flag = 0;
             board_rx_ok_debug++;
@@ -111,8 +112,8 @@ int main(void)
             // 小车保持停车，不会因重连被自动唤醒。
             Chassis_Unblock(DISARM_COMM_LOST);
 
-            drone_timeout_cnt = 0; // 成功收到无人机数据，喂狗清零
-            drone_timeout_debug = drone_timeout_cnt;
+            last_drone_rx_time_ms = sys_time_ms;
+            drone_timeout_debug = 0;
 
             uint8_t stop_event = Board_Comm_Consume_Stop_Event();
 
@@ -140,13 +141,10 @@ int main(void)
                 Visual_Control_Loop();
             }
         } else {
-            drone_timeout_cnt++;
-            // 主循环中有 system_delay_ms(1)，因此每次自增大约是 1ms
-            if (drone_timeout_cnt > 1000) { // 超过 1000ms 没收到通讯
+            drone_timeout_debug = sys_time_ms - last_drone_rx_time_ms;
+            if (drone_timeout_debug >= 1000U) { // 超过 1000ms 没收到通讯
                 Chassis_Block(DISARM_COMM_LOST); // 置通讯丢失位 → 停车清理 (幂等)
-                drone_timeout_cnt = 1000; // 卡住计数器防止溢出
             }
-            drone_timeout_debug = drone_timeout_cnt;
         }
 
         seekfree_assistant_data_analysis();
