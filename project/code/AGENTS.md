@@ -43,7 +43,8 @@ POST_DASH_HOLD_MS = 10U   // 完全刹停后静止等待视觉稳定
 DASH_SPEED_MIN_MPS = 0.20f // 可信接近速度下限, 兼可靠性门下界
 DASH_SPEED_MAX_MPS = 1.20f // 可信接近速度上限
 Target identity filter = 5 个 Expiring_Slot_t (car/target/latest/adopted/pending) 替代两套 coast；
-  角度差 < 15.5° 时立即采纳；大角度候选方向一致的 state3 样本置信度累计到 40 后切换
+  角度差 < 15.5° 时立即采纳 (续期 adopted)；分歧时 pending 每帧覆盖 latest，连续稳定帧达 40 后切换；
+  adopted 自然过期时优先采纳仍有效的 pending (继承其过期时间)，否则采纳 latest
 Dash 方向 = adopted_angle 方向向量 EMA (α=0.3, Cartesian 坐标系, 360° 环绕安全)
 Dash 时间 = 帧间距离差 EMA 给出闭合速度，先扣除 v²/(2*MAX_ACCEL_LINEAR) 制动距离，再换算剩余时间；经 DASH_MS_MAX 限幅后固定减少 50ms
 Dash 距离 = 距离 EMA (α=0.3, 防末帧噪声)

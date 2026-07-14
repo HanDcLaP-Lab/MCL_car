@@ -234,32 +234,34 @@ static uint8_t target_filter_update(uint8_t locked_state) {
 
     if (latest_ok) {
         if (!adopted_ok) {
-            adopted_angle = latest_angle;
+            if (slot_check(&pending_angle)) {
+                adopted_angle = pending_angle;
+            } else {
+                adopted_angle = latest_angle;
+            }
             pending_angle_reset();
             adopted_ok = 1;
         } else {
-            adopted_angle.expire_ms = now + ANGLE_VALID_MS;
             if (angle_matches(latest_angle.value, adopted_angle.value)) {
                 adopted_angle = latest_angle;
                 pending_angle_reset();
             } else if (locked_state == 3) {
                 if (!pending_angle.valid) {
-                    pending_angle = latest_angle;
                     pending_angle_confidence = 1;
                 } else if (angle_matches(latest_angle.value, pending_angle.value)) {
                     pending_angle_confidence++;
-                    if (pending_angle_confidence >= PENDING_ANGLE_CONFIDENCE_THRESHOLD) {
-                        adopted_angle = latest_angle;
-                        pending_angle_reset();
-                        Mecanum_Set_Large_Turn_Accel_Limit(1U);
-                        Visual_Track_Clear();
-                        dash_dir_vx_est = 0; dash_dir_vy_est = 0;
-                        dash_speed_est = 0; dash_dist_prev = 0; dash_stamp_prev = 0;
-                        dash_speed_samples = 0; dash_dist_est = 0;
-                    }
                 } else {
-                    pending_angle = latest_angle;
                     pending_angle_confidence = 1;
+                }
+                pending_angle = latest_angle;
+                if (pending_angle_confidence >= PENDING_ANGLE_CONFIDENCE_THRESHOLD) {
+                    adopted_angle = latest_angle;
+                    pending_angle_reset();
+                    Mecanum_Set_Large_Turn_Accel_Limit(1U);
+                    Visual_Track_Clear();
+                    dash_dir_vx_est = 0; dash_dir_vy_est = 0;
+                    dash_speed_est = 0; dash_dist_prev = 0; dash_stamp_prev = 0;
+                    dash_speed_samples = 0; dash_dist_est = 0;
                 }
             }
         }
