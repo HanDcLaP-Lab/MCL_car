@@ -47,14 +47,13 @@
 #define TARGET_VALID_MS         50U    // 目标坐标有效期 (ms)
 #define ANGLE_VALID_MS          600U   // 合成角度保质期 (ms)
 #define ANGLE_MATCH_COS         0.964f // cos(15.5°)，同目标角度匹配阈值
-#define PENDING_ANGLE_CONFIDENCE_THRESHOLD 40U  // 连续N帧方向一致后切换目标
+#define PENDING_ANGLE_CONFIDENCE_THRESHOLD 40U  // 同向state3样本置信度达到阈值后切换目标
 
 // 盲冲 (Dash) 参数
 #define DASH_DIST_CM            50.0f   // 车-目标距离低于此值时触发盲冲 (cm)
-#define DASH_MS_MIN             200U    // 盲冲时长下限 (ms)
-#define DASH_MS_MAX             700U    // 盲冲时长上限 (ms)
-#define DASH_EXTRA_MS          -350     // 盲冲在计算时长基础上固定减少 200ms
-#define POST_DASH_HOLD_MS       300U    // 盲冲结束后静止等待视觉稳定 (ms)
+#define DASH_MS_MAX             700U    // 固定减时前的盲冲时长上限 (ms)
+#define DASH_TIME_REDUCTION_MS  50U     // 制动距离换算后再固定减少的盲冲时间 (ms)
+#define POST_DASH_HOLD_MS       10U     // 完全刹停后静止等待视觉稳定 (ms)
 #define DASH_SPEED_MIN_MPS      0.20f   // 可信接近速度下限 (m/s); 兼可靠性门下界
 #define DASH_SPEED_MAX_MPS      1.20f   // 可信接近速度上限 (m/s)
 

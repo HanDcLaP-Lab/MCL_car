@@ -8,7 +8,7 @@ float dist_out = 0;
 volatile float visual_last_vx = 0.0f;
 volatile float visual_last_vy = 0.0f;
 volatile uint32_t dash_end_time = 0;          // 盲冲绝对结束物理时间
-static volatile uint32_t post_dash_hold_end_time = 0; // 盲冲后静止等待结束时间
+static volatile uint32_t post_dash_hold_end_time = 0; // 盲冲后减速与静止等待结束时间
 volatile uint32_t rush_cooldown_end_time = 0; // 防重入冷却绝对结束时间
 
 // ================== 保质期槽位 (目标身份滤波) ==================
@@ -57,6 +57,20 @@ static float dash_dist_prev = 0;   // 上帧距离 (cm)
 static uint32_t dash_stamp_prev = 0;      // 上帧时间 (ms)
 static uint8_t dash_speed_samples = 0;     // 可靠性门: 有效样本数
 static float dash_dist_est = 0;   // 距离 EMA (cm)
+
+static uint32_t Dash_Calculate_Duration_Ms(float distance_cm, float closing_speed) {
+    float distance_m = distance_cm * 0.01f;
+    // 预留速度指令归零后由加速度斜坡产生的制动距离。
+    float stop_distance = closing_speed * closing_speed / (2.0f * MAX_ACCEL_LINEAR);
+    float dash_distance = distance_m - stop_distance;
+
+    if (dash_distance <= 0.0f) return 0U;
+
+    uint32_t duration_ms = (uint32_t)(dash_distance / closing_speed * 1000.0f);
+    if (duration_ms > DASH_MS_MAX) duration_ms = DASH_MS_MAX;
+    return duration_ms > DASH_TIME_REDUCTION_MS ?
+           duration_ms - DASH_TIME_REDUCTION_MS : 0U;
+}
 
 // VISUAL_VELOCITY_GUARD_BEGIN
 // ISR 每次强制停车都会推进代次；当前视觉帧只能发布同一代次内的速度。
@@ -303,6 +317,13 @@ static void State3_Handler(void) {
         return;
     }
 
+    // 有 pending 候选：冻结旧方向，不让未通过置信度确认的距离污染 Dash 估计。
+    if (pending_angle.valid) {
+        Visual_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
+        Visual_Track_Refresh();
+        return;
+    }
+
     // ==================== Dash 方向 EMA (叠加在 adopted_angle 之上) ====================
     float unit_x = visual_last_vx / TARGET_SPEED;  // cos(adopted_angle)
     float unit_y = visual_last_vy / TARGET_SPEED;  // sin(adopted_angle)
@@ -349,23 +370,13 @@ static void State3_Handler(void) {
                 if (closing < DASH_SPEED_MIN_MPS) closing = DASH_SPEED_MIN_MPS;
                 else if (closing > DASH_SPEED_MAX_MPS) closing = DASH_SPEED_MAX_MPS;
 
-                float duration_sec = (dash_dist_cm / 100.0f) / closing;
-                int32_t duration_ms = (int32_t)(duration_sec * 1000.0f) + DASH_EXTRA_MS;
-                if (duration_ms > (int32_t)DASH_MS_MAX) duration_ms = (int32_t)DASH_MS_MAX;
-                if (duration_ms < (int32_t)DASH_MS_MIN) duration_ms = (int32_t)DASH_MS_MIN;
-                dash_end_time = sys_time_ms + (uint32_t)duration_ms;
+                uint32_t duration_ms = Dash_Calculate_Duration_Ms(dash_dist_cm, closing);
+                dash_end_time = sys_time_ms + duration_ms;
                 Visual_Set_Velocity(dash_vx, dash_vy, 0.0f);
                 rush_sign = 1;
                 return; // 跳过正常追踪，下帧由 dash_end_time 门接管
             }
         }
-    }
-
-    // 有 pending 候选：adopted 未采纳新观测，方向保持冻结
-    if (pending_angle.valid) {
-        Visual_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
-        Visual_Track_Refresh();
-        return;
     }
 
     // 正常追踪：adopted 已刷新 → 发布新速度
@@ -407,7 +418,7 @@ void Visual_State_Reset(void) {
     dash_speed_est = 0; dash_dist_prev = 0; dash_stamp_prev = 0;
     dash_speed_samples = 0; dash_dist_est = 0;
     // 注意：不在此函数内清零 rush_cooldown_end_time。
-    // rush_cooldown 是 dash 到期时由 1ms ISR 设置的 1 秒冷却期，
+    // rush_cooldown 从预计刹停时刻开始保留 1 秒冷却期，
     // 其目的是防止 0 速度无限重入。若被一并清零，冷却形同虚设，
     // 信标闪烁时 state 3 可无限触发新一轮盲冲。
 }
@@ -416,10 +427,13 @@ void Visual_State_Reset(void) {
 // 由 Mecanum_Control_Loop (1ms ISR) 调用，作为主循环串口无数据时的最后防线
 void Visual_Brake_Check(void) {
     if (dash_end_time > 0 && sys_time_ms >= dash_end_time) {
+        float braking_speed = sqrtf(smooth_vx * smooth_vx + smooth_vy * smooth_vy);
+        uint32_t braking_time_ms =
+            (uint32_t)(braking_speed / MAX_ACCEL_LINEAR * 1000.0f + 0.999f);
         Visual_Invalidate_Velocity();
         Visual_State_Reset();
-        post_dash_hold_end_time = sys_time_ms + POST_DASH_HOLD_MS;
-        rush_cooldown_end_time = sys_time_ms + 1000;
+        post_dash_hold_end_time = sys_time_ms + braking_time_ms + POST_DASH_HOLD_MS;
+        rush_cooldown_end_time = sys_time_ms + braking_time_ms + 1000U;
     }
 }
 
@@ -465,7 +479,7 @@ void Visual_Control_Loop(void) {
         return; // 提前退出，屏蔽后续视觉解析！
     }
 
-    // Dash结束后先静止，等待无人机与画面稳定，再从干净状态采纳新目标。
+    // Dash结束后先完成斜坡减速，再静止等待画面稳定并采纳新目标。
     if (post_dash_hold_end_time > 0) {
         if (sys_time_ms < post_dash_hold_end_time) {
             Visual_Set_Velocity(0.0f, 0.0f, 0.0f);
