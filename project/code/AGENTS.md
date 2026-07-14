@@ -35,7 +35,7 @@ CAR_VALID_MS = 50U         // 小车坐标保质期 (ms)
 TARGET_VALID_MS = 50U      // 目标坐标保质期 (ms)
 ANGLE_VALID_MS = 600U      // 合成角度保质期 (ms)，替代旧 COAST_HOLD_MS
 ANGLE_MATCH_COS = 0.964f   // cos(15.5°)，同目标角度匹配阈值
-TARGET_SWITCH_VOTE_WINDOW/MAJORITY = 25U/24U // 大角度候选最近25帧严格多数投票
+PENDING_ANGLE_CONFIDENCE_THRESHOLD = 10U // 连续N帧方向一致后切换目标
 DASH_DIST_CM = 50.0f       // 车-目标距离低于此值时触发盲冲 (cm)
 DASH_MS_MIN = 200U        // 盲冲时长下限 (ms)
 DASH_MS_MAX = 700U        // 盲冲时长上限 (ms)
@@ -44,7 +44,7 @@ POST_DASH_HOLD_MS = 300U  // 盲冲结束后静止等待视觉稳定
 DASH_SPEED_MIN_MPS = 0.20f // 可信接近速度下限, 兼可靠性门下界
 DASH_SPEED_MAX_MPS = 1.20f // 可信接近速度上限
 Target identity filter = 5 个 Expiring_Slot_t (car/target/latest/adopted/pending) 替代两套 coast；
-  角度差 < 15.5° 时立即采纳；大角度候选在最近25个 state3 帧中获得至少24票后切换
+  角度差 < 15.5° 时立即采纳；大角度候选连续 N 帧方向一致后置信度达标切换
 Dash 方向 = adopted_angle 方向向量 EMA (α=0.3, Cartesian 坐标系, 360° 环绕安全)
 Dash 速度 = 帧间距离差 EMA (α=0.3) + 可靠性门 (≥4 样本且 > DASH_SPEED_MIN_MPS → 用估计值; 否则 TARGET_SPEED)
 Dash 距离 = 距离 EMA (α=0.3, 防末帧噪声)

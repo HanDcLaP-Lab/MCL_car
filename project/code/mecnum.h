@@ -47,8 +47,7 @@
 #define TARGET_VALID_MS         50U    // 目标坐标有效期 (ms)
 #define ANGLE_VALID_MS          600U   // 合成角度保质期 (ms)
 #define ANGLE_MATCH_COS         0.964f // cos(15.5°)，同目标角度匹配阈值
-#define TARGET_SWITCH_VOTE_WINDOW  25U // 大角度候选投票窗口
-#define TARGET_SWITCH_VOTE_MAJORITY 24U // 25帧窗口内至少24票才切换
+#define PENDING_ANGLE_CONFIDENCE_THRESHOLD 40U  // 连续N帧方向一致后切换目标
 
 // 盲冲 (Dash) 参数
 #define DASH_DIST_CM            50.0f   // 车-目标距离低于此值时触发盲冲 (cm)
