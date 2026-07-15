@@ -42,7 +42,7 @@ MCL_car/
 | PID 控制器 | `project/code/pid.c` | 增量式 + 位置式 PID |
 | 编码器读取 (4个电机) | `project/code/encoder.c` | 正交编码器 + 卡尔曼滤波 |
 | IMU / 陀螺仪 | `project/code/imu_car_rc.c` | IMU660RC，Kalman/Mahony 姿态融合和坐标系映射 |
-| 板间通讯 (接收无人机数据) | `project/code/car_board_comm.c` | UART1, 115200, AA55协议 |
+| 板间通讯 (接收无人机数据) | `project/code/car_board_comm.c` | UART1, 1000000, AA55协议，12个float |
 | 视觉追踪状态机 / 坐标变换 | `project/code/car_image.c` | Image_Solve()、State0~3、目标角度筛选与距离触发盲冲 |
 | 无线串口调试 / 调参 | `project/code/wireless_uart.c` | UART2, SEEKFREE无线模块 |
 | 卡尔曼滤波器 | `project/code/kalman_filter.c` | 一维，用于编码器平滑 |
@@ -56,7 +56,7 @@ MCL_car/
 ```
 [无人机摄像头] → 无线 UART → [小车 UART1 接收]
                                     ↓
-main() 主循环 (~1ms):              car_board_comm 解析8个float
+main() 主循环 (~1ms):              car_board_comm 解析12个float
   ├─ 解析无人机数据包               ├─ car_ground_pos (小车坐标)
   ├─ 无人机通讯看门狗 (1000ms超时停车) ├─ target_ground_pos (目标坐标)
   ├─ 收到新视觉包后调用 Visual_Control_Loop()

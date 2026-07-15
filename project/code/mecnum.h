@@ -10,18 +10,11 @@
 #define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.028f   // 轮子半径
 #define PWM_MAX_M       5000.0f  // 四轮 PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
-#define TARGET_SPEED    0.8f     // 目标速度 (m/s)
 #define TEST_MODE       0         // 1: 仅运行 test_program_1，0: 正常视觉控制
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f
 #define VISUAL_DT       0.020f
-
-// 加速度限制 (单位: m/s^2 和 rad/s^2)
-#define MAX_ACCEL_LINEAR 1.0f
-#define LARGE_TURN_ACCEL_SCALE 0.5f
-#define MAX_ACCEL_W      1.0f
-
 
 #define OUT_MAX PWM_MAX_M       // 四轮速度环输出上限与实际 PWM 限幅保持一致
 // ================== 硬件引脚定义 ==================
@@ -45,16 +38,23 @@
 // 目标身份滤波
 #define CAR_VALID_MS            50U    // 小车坐标有效期 (ms)
 #define TARGET_VALID_MS         50U    // 目标坐标有效期 (ms)
-#define ANGLE_VALID_MS          600U   // 合成角度保质期及大角度候选确认时间 (ms)
-#define ANGLE_MATCH_COS         0.964f // cos(15.5°)，同目标角度匹配阈值
+#define ANGLE_VALID_MS          800U   // adopted基础保质期及pending候补保质期 (ms)
+#define ADOPTED_ANGLE_MAX_VALID_MS       1500U // 同方向稳定后 adopted 最大保质期 (ms)
+#define ADOPTED_ANGLE_FULL_CONFIDENCE_MS 800U  // 达到最大保质期所需稳定时间 (约40帧@50Hz)
+#define ANGLE_MATCH_COS         0.9848f // cos(10°)，同目标角度匹配阈值
+
+#if ADOPTED_ANGLE_MAX_VALID_MS < ANGLE_VALID_MS
+#error "ADOPTED_ANGLE_MAX_VALID_MS must be >= ANGLE_VALID_MS"
+#endif
+#if ADOPTED_ANGLE_FULL_CONFIDENCE_MS == 0U
+#error "ADOPTED_ANGLE_FULL_CONFIDENCE_MS must be > 0"
+#endif
 
 // 盲冲 (Dash) 参数
 #define DASH_DIST_CM            50.0f   // 车-目标距离低于此值时触发盲冲 (cm)
-#define DASH_MS_MAX             700U    // 固定减时前的盲冲时长上限 (ms)
-#define DASH_TIME_REDUCTION_MS  -50U     // 制动距离换算后再固定减少的盲冲时间 (ms)
-#define POST_DASH_HOLD_MS       10U     // 完全刹停后静止等待视觉稳定 (ms)
-#define DASH_SPEED_MIN_MPS      0.20f   // 可信接近速度下限 (m/s); 兼可靠性门下界
-#define DASH_SPEED_MAX_MPS      1.20f   // 可信接近速度上限 (m/s)
+#define DASH_MS_MAX             700U    // 固定增加100ms前的计算时长上限
+#define DASH_SPEED_MIN_MPS      (TARGET_SPEED - 0.1f) // Dash接近速度下限 (m/s); 兼可靠性门下界
+#define DASH_SPEED_MAX_MPS      (TARGET_SPEED + 0.1f) // Dash接近速度上限 (m/s)
 
 #include "chassis_arm.h"
 

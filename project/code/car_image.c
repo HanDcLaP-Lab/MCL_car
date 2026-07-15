@@ -12,25 +12,38 @@ static volatile uint32_t post_dash_hold_end_time = 0; // Dash减速与静止等�
 volatile uint32_t rush_cooldown_end_time = 0; // 下次允许触发Dash的绝对时刻 (0表示无冷却)
 
 // ================== 保质期槽位 (目标身份滤波) ==================
-// car/target 槽保存二维坐标；三个 angle 槽只使用 value，单位均为弧度。
-// 槽位通过绝对到期时间容忍短暂丢帧，读取时由 slot_check() 就地失效。
 typedef struct {
-    float     value;      // 坐标槽：X坐标(cm)；角度槽：方向角(rad)
-    float     value_y;    // 坐标槽：Y坐标(cm)；角度槽不使用
-    uint32_t  expire_ms;  // 绝对保质到期时刻 (sys_time_ms)
-    uint8_t   valid;      // 1表示已写入；过期后由slot_check()清零
-} Expiring_Slot_t;
+    float x;
+    float y;
+    uint32_t expire_ms;
+    uint8_t valid;
+} Position_Slot_t;
 
-static Expiring_Slot_t car_slot;        // 最近可信小车坐标 (value=X, value_y=Y, cm)
-static Expiring_Slot_t target_slot;     // 最近可信信标坐标 (value=X, value_y=Y, cm)
-static Expiring_Slot_t latest_angle;    // car_slot与target_slot最新合成的车体系方向 (rad)
-static Expiring_Slot_t adopted_angle;   // 已通过身份滤波、当前允许控制使用的方向 (rad)
-static Expiring_Slot_t pending_angle;   // 与adopted分歧较大、正在等待确认的候选方向 (rad)
-static uint32_t pending_angle_start_ms = 0; // 当前候选方向开始持续出现的时刻
+typedef struct {
+    float angle;           // 小车车体系方向 (rad)
+    float distance;        // 当前候选对应的车-信标距离 (cm)
+    uint32_t expire_ms;
+    uint8_t valid;
+} Direction_Slot_t;
 
-static uint8_t slot_check(Expiring_Slot_t *s) {
-    if (s->valid && sys_time_ms >= s->expire_ms) s->valid = 0;
-    return s->valid;
+static const uint8_t target_x_uart_index[TARGET_CANDIDATE_COUNT] = {2U, 8U, 10U};
+static const uint8_t target_y_uart_index[TARGET_CANDIDATE_COUNT] = {3U, 9U, 11U};
+
+static Position_Slot_t car_slot;                              // 最近可信小车坐标
+static Position_Slot_t target_slot[TARGET_CANDIDATE_COUNT];  // 按无人机评分排序的信标坐标
+static Direction_Slot_t latest_angle[TARGET_CANDIDATE_COUNT]; // 三个信标当前合成出的方向
+static Direction_Slot_t adopted_angle;                        // 当前允许控制使用的方向
+static Direction_Slot_t pending_angle;                        // adopted失效后的候补方向
+static uint32_t adopted_angle_stable_ms = 0; // 同方向可信合成累计时间，用于扩展adopted保质期
+
+static uint8_t position_slot_check(Position_Slot_t *slot) {
+    if (slot->valid && sys_time_ms >= slot->expire_ms) slot->valid = 0;
+    return slot->valid;
+}
+
+static uint8_t direction_slot_check(Direction_Slot_t *slot) {
+    if (slot->valid && sys_time_ms >= slot->expire_ms) slot->valid = 0;
+    return slot->valid;
 }
 
 static uint8_t angle_matches(float a, float b) {
@@ -39,7 +52,39 @@ static uint8_t angle_matches(float a, float b) {
 
 static void pending_angle_reset(void) {
     pending_angle.valid = 0;
-    pending_angle_start_ms = 0;
+}
+
+static int8_t latest_match_index(float reference_angle) {
+    for (uint8_t i = 0; i < TARGET_CANDIDATE_COUNT; i++) {
+        if (direction_slot_check(&latest_angle[i]) &&
+            angle_matches(latest_angle[i].angle, reference_angle)) {
+            return (int8_t)i;
+        }
+    }
+    return -1;
+}
+
+static int8_t latest_first_valid_index(void) {
+    for (uint8_t i = 0; i < TARGET_CANDIDATE_COUNT; i++) {
+        if (direction_slot_check(&latest_angle[i])) return (int8_t)i;
+    }
+    return -1;
+}
+
+// 新候选均与pending不一致时，用其中方向最接近旧pending的一项更新候补槽。
+static int8_t latest_nearest_index(float reference_angle) {
+    int8_t nearest = -1;
+    float best_similarity = -2.0f;
+
+    for (uint8_t i = 0; i < TARGET_CANDIDATE_COUNT; i++) {
+        if (!direction_slot_check(&latest_angle[i])) continue;
+        float similarity = cosf(latest_angle[i].angle - reference_angle);
+        if (similarity > best_similarity) {
+            best_similarity = similarity;
+            nearest = (int8_t)i;
+        }
+    }
+    return nearest;
 }
 
 // ================== 视觉状态机共享静态变量 ==================
@@ -52,6 +97,32 @@ static uint8_t  track_memory_started = 0;  // 1表示last_ms已经完成首次�
 static uint8_t  zero_consecutive = 0;      // 连续消费到state0的次数 (最大计到2)
 static float    prev_target_x = 0.0f, prev_target_y = 0.0f; // 保留的上一信标坐标，目前仅记录
 static uint8_t  has_prev_target = 0;       // 上一信标坐标记录标志，目前不参与控制判断
+
+static void adopted_angle_reset(void) {
+    adopted_angle.valid = 0;
+    adopted_angle_stable_ms = 0;
+}
+
+// 仅由本次重新合成的同方向调用。稳定时间按实际收包间隔累计，单帧最多计20ms；
+// 保质期始终从本次可信方向合成时刻起算，未产生新方向时不会延后到期时刻。
+static void adopted_angle_refresh(const Direction_Slot_t *candidate, uint32_t now) {
+    uint32_t add_ms = track_memory_step_ms;
+    if (add_ms > TRACK_STEP_MAX_MS) add_ms = TRACK_STEP_MAX_MS;
+    if (adopted_angle_stable_ms >= ADOPTED_ANGLE_FULL_CONFIDENCE_MS ||
+        add_ms > ADOPTED_ANGLE_FULL_CONFIDENCE_MS - adopted_angle_stable_ms) {
+        adopted_angle_stable_ms = ADOPTED_ANGLE_FULL_CONFIDENCE_MS;
+    } else {
+        adopted_angle_stable_ms += add_ms;
+    }
+
+    uint32_t valid_ms = ANGLE_VALID_MS +
+        (ADOPTED_ANGLE_MAX_VALID_MS - ANGLE_VALID_MS) * adopted_angle_stable_ms /
+        ADOPTED_ANGLE_FULL_CONFIDENCE_MS;
+    adopted_angle.angle = candidate->angle;
+    adopted_angle.distance = candidate->distance;
+    adopted_angle.expire_ms = now + valid_ms;
+    adopted_angle.valid = 1;
+}
 
 // ================== Dash 估计 (EMA 滤波) ==================
 static float dash_dir_vx_est = 0;       // Dash方向单位向量EMA的X分量
@@ -80,8 +151,7 @@ static uint32_t Dash_Calculate_Duration_Ms(float distance_cm, float closing_spee
 
     uint32_t duration_ms = (uint32_t)(dash_distance / closing_speed * 1000.0f);
     if (duration_ms > DASH_MS_MAX) duration_ms = DASH_MS_MAX;
-    return ((duration_ms > DASH_TIME_REDUCTION_MS ?
-           duration_ms - DASH_TIME_REDUCTION_MS : 0U) + 100);
+    return duration_ms + 100U;
 }
 
 // VISUAL_VELOCITY_GUARD_BEGIN
@@ -177,11 +247,11 @@ static uint8_t Visual_Track_Is_Locked(void) {
 
 void Image_Init(void) {
     memset(uart_data, 0, sizeof(uart_data));
+    adopted_angle_reset();
     dash_estimate_reset();
 }
 
 void Image_Solve(float car_yaw, float *dist, float *angle) {
-    extern float uart_data[8];
     // 直接获取无人机解算好的物理坐标 (单位: cm)
     float x_car = uart_data[0];       // [0] 小车地面X坐标
     float y_car = uart_data[1];       // [1] 小车地面Y坐标
@@ -215,101 +285,112 @@ void Image_Solve(float car_yaw, float *dist, float *angle) {
 
 // ================== 目标身份滤波 ==================
 
+static void position_slot_refresh(Position_Slot_t *slot, float x, float y,
+                                  uint32_t now, uint32_t valid_ms) {
+    slot->x = x;
+    slot->y = y;
+    slot->expire_ms = now + valid_ms;
+    slot->valid = 1;
+}
+
+// 将本帧三个信标分别解算到小车车体系。第一候选沿用无人机滤波距离，
+// 其余候选没有独立距离字段，因此使用同一对原始坐标计算距离。
+static void latest_angles_update(uint32_t now) {
+    float delta = (imu_car_rc_data.yaw - uart_data[4]) * ((float)M_PI / 180.0f);
+    float cos_delta = cosf(delta);
+    float sin_delta = sinf(delta);
+
+    for (uint8_t i = 0; i < TARGET_CANDIDATE_COUNT; i++) {
+        latest_angle[i].valid = 0;
+        if (!position_slot_check(&car_slot) ||
+            !position_slot_check(&target_slot[i])) continue;
+
+        float dx = target_slot[i].x - car_slot.x;
+        float dy = target_slot[i].y - car_slot.y;
+        float dx_car = dx * cos_delta + dy * sin_delta;
+        float dy_car = dx * sin_delta - dy * cos_delta;
+        float raw_distance = sqrtf(dx * dx + dy * dy);
+
+        latest_angle[i].angle = atan2f(dy_car, dx_car);
+        latest_angle[i].distance =
+            (i == 0U && uart_data[7] > 0.01f) ? uart_data[7] : raw_distance;
+        latest_angle[i].expire_ms = now + ANGLE_VALID_MS;
+        latest_angle[i].valid = 1;
+    }
+}
+
+static void adopted_angle_replace(const Direction_Slot_t *candidate, uint8_t large_turn) {
+    adopted_angle = *candidate;
+    adopted_angle_stable_ms = 0;
+    pending_angle_reset();
+    if (large_turn) Mecanum_Set_Large_Turn_Accel_Limit(1U);
+    dash_estimate_reset();
+}
+
 /**
  * @brief 更新短时坐标缓存，维护当前采纳方向和大角度候选方向
  * @param locked_state 当前视觉可见状态，仅决定本次刷新哪些坐标槽
  * @return 1表示存在可用adopted方向且visual_last_vx/vy已更新，0表示当前无可用方向
  *
- * 当前临时取消了state3门槛：只要latest_angle仍在保质期内，state1/2也会参与
- * 重新采纳、同方向刷新和大角度候选确认。
+ * state1/2可用当前坐标与50ms内的缓存坐标重新合成方向；只有本次实际合成出的
+ * latest才能刷新adopted或维护pending，pending仅在adopted到期后接管。
  */
 static uint8_t target_filter_update(uint8_t locked_state) {
     uint32_t now = sys_time_ms;
 
-    // ① 按当前可见状态刷新小车/信标坐标槽。
-    // 分别刷新本帧真实可见的对象。50ms 槽位允许 state1/2 短闪烁期间
-    // 暂时用上一份仍在保质期内的坐标与当前坐标合成方向。
+    // ① 按当前可见状态刷新小车和三个按评分排序的信标坐标槽。
+    // 50ms槽位允许state1/2用当前坐标与短时缓存坐标合成可信方向。
     if (locked_state == 1 || locked_state == 3) {
-        car_slot.value   = uart_data[0];
-        car_slot.value_y = uart_data[1];
-        car_slot.expire_ms = now + CAR_VALID_MS;
-        car_slot.valid = 1;
+        position_slot_refresh(&car_slot, uart_data[0], uart_data[1], now, CAR_VALID_MS);
     }
     if (locked_state == 2 || locked_state == 3) {
-        target_slot.value   = uart_data[2];
-        target_slot.value_y = uart_data[3];
-        target_slot.expire_ms = now + TARGET_VALID_MS;
-        target_slot.valid = 1;
-    }
-
-    // ② 两个坐标同时新鲜时，将无人机地面系相对矢量旋转到小车车体系，
-    // 再生成保质600ms的latest方向；否则沿用尚未过期的上一份latest。
-    if (slot_check(&car_slot) && slot_check(&target_slot)) {
-        float dx = target_slot.value   - car_slot.value;
-        float dy = target_slot.value_y - car_slot.value_y;
-        float delta = (imu_car_rc_data.yaw - uart_data[4]) * ((float)M_PI / 180.0f);
-        float dx_car = dx * cosf(delta) + dy * sinf(delta);
-        float dy_car = -dx * sinf(delta) + dy * cosf(delta);
-        dy_car = -dy_car;
-        latest_angle.value = atan2f(dy_car, dx_car);
-        latest_angle.expire_ms = now + ANGLE_VALID_MS;
-        latest_angle.valid = 1;
-    }
-
-    // ③ 读取三个角度槽的当前有效性。slot_check()会顺手清除过期槽。
-    uint8_t adopted_ok = slot_check(&adopted_angle);
-    uint8_t latest_ok  = slot_check(&latest_angle);
-    uint8_t pending_ok = slot_check(&pending_angle);
-
-    // ④ 将latest并入身份状态机。
-    // adopted 是当前控制方向，pending 是尚未通过持续时间确认的新方向：
-    // 同方向立即刷新；大角度变化持续确认满600ms后切换。
-    if (latest_ok) {
-        if (!adopted_ok) {
-            // 旧方向已经过期时，立即从仍在保质期内的最新角度重新采纳。
-            uint8_t is_large_reacquire =
-                (dash_dir_vx_est != 0.0f || dash_dir_vy_est != 0.0f) &&
-                !angle_matches(latest_angle.value, adopted_angle.value);
-            adopted_angle = latest_angle;
-            pending_angle_reset();
-            if (is_large_reacquire) Mecanum_Set_Large_Turn_Accel_Limit(1U);
-            // 重新建立方向后，旧目标留下的Dash跨帧估计全部失效。
-            dash_estimate_reset();
-            adopted_ok = 1;
-        } else {
-            // 旧方向仅由state3续期，等待差异较大的新方向持续确认满600ms。
-            if (locked_state == 3) {
-                adopted_angle.expire_ms = now + ANGLE_VALID_MS;
-            }
-            if (angle_matches(latest_angle.value, adopted_angle.value)) {
-                adopted_angle.value = latest_angle.value;
-                pending_angle_reset();
-            } else {
-                //最新角度与旧角度差距较大
-                if (!pending_ok || !angle_matches(latest_angle.value, pending_angle.value)) {
-                    pending_angle_start_ms = now;// 候选方向明显变化或者没有侯选方向时重新计时。
-                }
-                // 整体复制latest，同时继承其value、expire_ms和valid。
-                pending_angle = latest_angle;
-                // pending_ok取自覆盖前，保证第一帧候选不会立即完成确认。
-                if (pending_ok &&
-                    (uint32_t)(now - pending_angle_start_ms) >= ANGLE_VALID_MS) {
-                    adopted_angle = latest_angle;
-                    pending_angle_reset();
-                    Mecanum_Set_Large_Turn_Accel_Limit(1U);
-                    // 正式换向后从新目标重新积累Dash方向、距离和接近速度。
-                    dash_estimate_reset();
-                }
-            }
+        for (uint8_t i = 0; i < TARGET_CANDIDATE_COUNT; i++) {
+            position_slot_refresh(&target_slot[i],
+                                  uart_data[target_x_uart_index[i]],
+                                  uart_data[target_y_uart_index[i]],
+                                  now, TARGET_VALID_MS);
         }
     }
 
-    // ⑤ 将身份滤波结果转换为固定模长速度方向，供State12/State3继续处理。
+    // ② 每次先失效旧latest；仅两侧坐标仍新鲜的候选在本次重新生成。
+    latest_angles_update(now);
+
+    // ③ fresh latest先维护候补槽，再由adopted决定刷新当前方向或在到期后接管候补。
+    uint8_t adopted_ok = direction_slot_check(&adopted_angle);
+    uint8_t pending_ok = direction_slot_check(&pending_angle);
+    int8_t first_latest = latest_first_valid_index();
+
+    if (first_latest >= 0) {
+        int8_t replacement = pending_ok ? latest_match_index(pending_angle.angle) : -1;
+        if (replacement < 0) {
+            replacement = pending_ok ?
+                latest_nearest_index(pending_angle.angle) : first_latest;
+        }
+        pending_angle = latest_angle[replacement];
+        pending_ok = 1;
+    }
+
     if (adopted_ok) {
-        // 此处只输出身份滤波后的单位方向；正常 state3 的当前帧原始方向
-        // 会在 State3_Handler() 末尾用于实时追踪。
-        visual_last_vx = TARGET_SPEED * cosf(adopted_angle.value);
-        visual_last_vy = TARGET_SPEED * sinf(adopted_angle.value);
+        int8_t adopted_match = latest_match_index(adopted_angle.angle);
+        if (adopted_match >= 0) {
+            adopted_angle_refresh(&latest_angle[adopted_match], now);
+            pending_angle_reset();
+        }
+    } else {
+        adopted_angle_stable_ms = 0;
+        if (pending_ok) {
+            uint8_t is_large_reacquire =
+                (dash_dir_vx_est != 0.0f || dash_dir_vy_est != 0.0f) &&
+                !angle_matches(pending_angle.angle, adopted_angle.angle);
+            adopted_angle_replace(&pending_angle, is_large_reacquire);
+            adopted_ok = 1;
+        }
+    }
+
+    // ④ 将身份滤波结果转换为固定模长速度方向，供State12/State3继续处理。
+    if (adopted_ok) {
+        visual_last_vx = TARGET_SPEED * cosf(adopted_angle.angle);
+        visual_last_vy = TARGET_SPEED * sinf(adopted_angle.angle);
         return 1;
     }
 
@@ -331,16 +412,19 @@ static void State0_Handler(void) {
     visual_last_vx = 0.0f;
     visual_last_vy = 0.0f;
     car_slot.valid = 0;
-    target_slot.valid = 0;
-    latest_angle.valid = 0;
-    adopted_angle.valid = 0;
+    for (uint8_t i = 0; i < TARGET_CANDIDATE_COUNT; i++) {
+        target_slot[i].valid = 0;
+        latest_angle[i].valid = 0;
+    }
+    adopted_angle_reset();
     pending_angle_reset();
     dash_estimate_reset();
 }
 
 // 状态 1 或 2：单目标丢失
 static void State12_Handler(uint8_t locked_state) {
-    // 跟踪置信度随时间衰减；是否继续沿旧方向运动由 adopted 的600ms保质期决定。
+    // Dash跟踪置信度仍随时间衰减；50ms内可用一新一旧坐标刷新方向置信度，
+    // 此后若没有新合成方向，继续运动时间由adopted原有动态保质期决定。
     Visual_Track_Decay();
     if (!target_filter_update(locked_state)) {
         Visual_Set_Velocity(0.0f, 0.0f, 0.0f);
@@ -356,7 +440,7 @@ static void State3_Handler(void) {
         return;
     }
 
-    // 有 pending 候选：冻结旧方向，不让未通过身份确认的距离污染 Dash 估计。
+    // 有 pending 候补：冻结旧方向，不让尚未接管的目标距离污染 Dash 估计。
     // 当前仍是 state3，因此继续累计“画面中确有车和信标”的跟踪置信度。
     if (pending_angle.valid) {
         Visual_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
@@ -381,7 +465,7 @@ static void State3_Handler(void) {
     // ==================== Dash 速度/距离 EMA + 可靠性门 ====================
     // 只接纳距离缩小时的正接近速度；至少4个有效样本后才使用估计值，
     // 样本不足时退回 TARGET_SPEED，距离本身也用 EMA 抑制末帧噪声。
-    float raw_dist = uart_data[7];
+    float raw_dist = adopted_angle.distance;
     if (dash_dist_prev > 0.01f && raw_dist > 0.01f && dash_stamp_prev > 0) {
         float dt = (float)(sys_time_ms - dash_stamp_prev) * 0.001f;
         if (dt > 0.0f) {
@@ -400,7 +484,7 @@ static void State3_Handler(void) {
 
     // ==================== 盲冲触发 (距离低于阈值) ====================
     // 入口同时要求：距离有效且足够近、跟踪置信度达到150ms、当前不在冷却期。
-    if (uart_data[7] > 0.01f && uart_data[7] < DASH_DIST_CM) {
+    if (raw_dist > 0.01f && raw_dist < DASH_DIST_CM) {
         uint8_t is_cooldown = (rush_cooldown_end_time > 0 && sys_time_ms < rush_cooldown_end_time);
         if (dash_end_time == 0 && Visual_Track_Is_Locked() && !is_cooldown) {
             float dash_vx = dash_dir_vx_est * TARGET_SPEED;
@@ -423,18 +507,9 @@ static void State3_Handler(void) {
         }
     }
 
-    // 正常追踪：目标身份已经由 adopted 确认，但运动方向使用当前原始坐标，
-    // 这样既避免轻易换标，又不会给同一目标额外增加600ms位置延迟。
-    float dist, angle;
-    Image_Solve(imu_car_rc_data.yaw, &dist, &angle);
-    dist_out = dist;
-
-    float arad = angle * ((float)M_PI / 180.0f);
-    float vx = TARGET_SPEED * cosf(arad);
-    float vy = TARGET_SPEED * sinf(arad);
-    Visual_Set_Velocity(vx, vy, 0.0f);
-    visual_last_vx = vx;
-    visual_last_vy = vy;
+    // adopted已由本帧匹配到的具体候选刷新，方向和距离始终属于同一信标。
+    dist_out = raw_dist;
+    Visual_Set_Velocity(visual_last_vx, visual_last_vy, 0.0f);
 
     prev_target_x = uart_data[2];
     prev_target_y = uart_data[3];
@@ -457,9 +532,11 @@ void Visual_State_Reset(void) {
     visual_last_vy = 0.0f;
     post_dash_hold_end_time = 0;
     car_slot.valid = 0;
-    target_slot.valid = 0;
-    latest_angle.valid = 0;
-    adopted_angle.valid = 0;
+    for (uint8_t i = 0; i < TARGET_CANDIDATE_COUNT; i++) {
+        target_slot[i].valid = 0;
+        latest_angle[i].valid = 0;
+    }
+    adopted_angle_reset();
     pending_angle_reset();
     dash_estimate_reset();
     // 注意：不在此函数内清零 rush_cooldown_end_time。

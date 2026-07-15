@@ -16,7 +16,7 @@
 | **wireless_uart** | `wireless_uart.c` / `wireless_uart.h` | 无线串口调试输出 (UART2)，实时发送电机/PID/IMU/编码器数据 |
 | **test** | `test.c` / `test.h` | 19个底盘运动测试程序 |
 
-## 关键常量定义 (mecnum.h)
+## 关键常量定义 (config.h / mecnum.h)
 
 ```c
 CAR_L = 0.10f             // 前后轮轴距一半 (m)
@@ -26,26 +26,30 @@ PWM_MAX_M = 5000.0f       // PWM 最大占空比 (上限10000)
 CONTROL_DT = 0.001f       // 控制周期 1ms
 VISUAL_DT = 0.020f        // 旧视觉周期常量；当前 Visual_Control_Loop 由收包触发
 TEST_MODE = 0             // 1时仅运行test_program_1，默认正常模式
-MAX_ACCEL_LINEAR/W        // 平移矢量模长/偏航加速度限制
-LARGE_TURN_ACCEL_SCALE = 0.5f // 确认大角度换标后，本次速度过渡的平移加速度倍率
+TARGET_SPEED = 0.8f       // 正常追点与Dash目标速度 (m/s)
+MAX_ACCEL_LINEAR = 5.0f  // 平移矢量模长加速度限制 (m/s^2)
+LARGE_TURN_ACCEL_SCALE = 2.5f // 确认大角度换标后，本次速度过渡的平移加速度倍率
+MAX_ACCEL_W = 1.0f       // 偏航加速度限制 (rad/s^2)
 TRACK_MEMORY_MS = 1000U  // 可靠跟踪置信时间上限
 TRACK_LOCK_THRESHOLD_MS = 150U // dash所需可信跟踪时间
 TRACK_STEP_MAX_MS = 20U  // 单帧置信时间增量上限
 CAR_VALID_MS = 50U         // 小车坐标保质期 (ms)
 TARGET_VALID_MS = 50U      // 目标坐标保质期 (ms)
-ANGLE_VALID_MS = 600U      // 合成角度保质期及大角度候选确认时间 (ms)
-ANGLE_MATCH_COS = 0.964f   // cos(15.5°)，同目标角度匹配阈值
+ANGLE_VALID_MS = 800U      // adopted基础保质期及pending候补保质期 (ms)
+ADOPTED_ANGLE_MAX_VALID_MS = 1500U // 同方向稳定后 adopted 最大保质期
+ADOPTED_ANGLE_FULL_CONFIDENCE_MS = 800U // 达到最大保质期所需稳定时间，约40帧@50Hz
+ANGLE_MATCH_COS = 0.9848f  // cos(10°)，同目标角度匹配阈值
 DASH_DIST_CM = 50.0f       // 车-目标距离低于此值时触发盲冲 (cm)
-DASH_MS_MAX = 700U        // 固定减时前的盲冲时长上限 (ms)
-DASH_TIME_REDUCTION_MS = 50U // 制动距离换算后再固定减少的盲冲时间 (ms)
-POST_DASH_HOLD_MS = 10U   // 完全刹停后静止等待视觉稳定
-DASH_SPEED_MIN_MPS = 0.20f // 可信接近速度下限, 兼可靠性门下界
-DASH_SPEED_MAX_MPS = 1.20f // 可信接近速度上限
-Target identity filter = 5 个 Expiring_Slot_t (car/target/latest/adopted/pending) 替代两套 coast；
-  角度差 < 15.5° 时立即采纳；大角度分歧由 state3 启动 pending，同一候选持续 600ms 后切换；
-  state1/2 短暂闪烁不清 pending，候选超过 600ms 未刷新则失效；切换/重采纳时清空旧 Dash 估计，大角度变化启用半加速度
+DASH_MS_MAX = 700U        // 固定增加100ms前的计算时长上限
+POST_DASH_HOLD_MS = 0U    // 完全刹停后的额外静止等待 (ms)
+DASH_SPEED_MIN_MPS = TARGET_SPEED - 0.1f // Dash接近速度下限, 兼可靠性门下界
+DASH_SPEED_MAX_MPS = TARGET_SPEED + 0.1f // Dash接近速度上限
+Target identity filter = car/target短时坐标槽与latest/adopted/pending方向槽共同维护目标；
+  本次可靠合成的同方向更新按物理时间累计置信度，adopted 保质期由 800ms 线性增加至 1500ms；
+  state1/2可在两侧坐标仍处于50ms保质期时参与合成；异方向只更新pending，adopted到期后才由pending接管；
+  Dash 仍只使用独立的 150ms 跟踪门槛，运行期间跳过方向置信度处理，结束复位时清零
 Dash 方向 = adopted_angle 方向向量 EMA (α=0.3, Cartesian 坐标系, 360° 环绕安全)
-Dash 时间 = 帧间距离差 EMA 给出闭合速度，先扣除 v²/(2*MAX_ACCEL_LINEAR) 制动距离，再换算剩余时间；经 DASH_MS_MAX 限幅后固定减少 50ms
+Dash 时间 = 帧间距离差 EMA 给出闭合速度，先扣除 v²/(2*MAX_ACCEL_LINEAR) 制动距离，再换算剩余时间；经 DASH_MS_MAX 限幅后固定增加100ms
 Dash 距离 = 距离 EMA (α=0.3, 防末帧噪声)
 Dash 触发 = state3 期间车-目标距离 < DASH_DIST_CM (50cm) 时在 State3_Handler 内直接触发
 ```

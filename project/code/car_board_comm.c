@@ -3,7 +3,7 @@
 
 // ================= 变量定义 =================
 // 索引映射见 car_board_comm.h 中的 extern 声明注释
-float uart_data[8] = {0}; 
+float uart_data[UART_DATA_LENGTH] = {0};
 
 uint8_t rx_buffer[512];   
 volatile uint8_t board_rx_complete_flag = 0;
@@ -31,8 +31,8 @@ typedef enum {
 
 // 定义共用体用于解析
 typedef union {
-    float f_data[8];
-    uint8_t byte_data[32];
+    float f_data[UART_DATA_LENGTH];
+    uint8_t byte_data[UART_PAYLOAD_BYTES];
 } FloatPack;
 
 // ================= 通讯初始化 =================
@@ -116,7 +116,7 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
             case STEP_DATA:
                 temp_pack.byte_data[data_idx++] = read_byte;
                 cal_checksum += read_byte;                   
-                if (data_idx >= 32) state = STEP_CHECKSUM;
+                if (data_idx >= UART_PAYLOAD_BYTES) state = STEP_CHECKSUM;
                 break;
                 
             case STEP_CHECKSUM:
@@ -136,7 +136,7 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                 if (read_byte == 0x7F) {                     
                     // [隐患修复 P3.11]: 增加数据合法性防御校验，防止 NaN/Inf 及离谱数据冲垮控制环
                     uint8_t data_valid = 1;
-                    for (int i = 0; i < 8; i++) {
+                    for (int i = 0; i < UART_DATA_LENGTH; i++) {
                         float f = temp_pack.f_data[i];
                         // 剔除 NaN (f != f) 和极大异常值(Inf等)
                         if (f != f || f > 1e6f || f < -1e6f) { 
@@ -158,7 +158,7 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
 
                     if (data_valid) {
                         // 校验完全通过，赋值
-                        for (int i = 0; i < 8; i++) {
+                        for (int i = 0; i < UART_DATA_LENGTH; i++) {
                             uart_data[i] = temp_pack.f_data[i];
                         }
 

@@ -9,10 +9,14 @@
 #define BOARD_TX_PIN     UART1_TX_P06_1
 #define BOARD_RX_PIN     UART1_RX_P06_0
 #define BOARD_RS485_DIR_PIN P06_2 // MAX3485 RE#/DE: 低电平为仅接收
+#define UART_DATA_LENGTH 12U
+#define UART_FLOAT_BYTES 4U
+#define UART_PAYLOAD_BYTES (UART_DATA_LENGTH * UART_FLOAT_BYTES)
+#define TARGET_CANDIDATE_COUNT 3U
 
 // ================= 外部变量声明 =================
 // 供其他文件调用的变量
-// uart_data[8] 索引映射 (无人机→小车下传协议):
+// uart_data[12] 索引映射 (无人机→小车下传协议):
 //   [0] car_body_pos.x      — 小车相对无人机的机体系X坐标 (cm)
 //   [1] car_body_pos.y      — 小车相对无人机的机体系Y坐标 (cm)
 //   [2] target_body_pos.x   — 目标相对无人机的机体系X坐标 (cm)
@@ -21,7 +25,11 @@
 //   [5] locked_state        — 目标锁定状态 (0=全丢/1=仅小车/2=仅信标/3=都有)
 //   [6] car_en              — 急停使能标志 (0=急停, 1=正常)
 //   [7] car_target_dist     — 车-信标地面距离 (cm)
-extern float uart_data[8]; 
+//   [8] target2_body_pos.x  — 第二信标相对无人机的机体系X坐标 (cm)
+//   [9] target2_body_pos.y  — 第二信标相对无人机的机体系Y坐标 (cm)
+//   [10] target3_body_pos.x — 第三信标相对无人机的机体系X坐标 (cm)
+//   [11] target3_body_pos.y — 第三信标相对无人机的机体系Y坐标 (cm)
+extern float uart_data[UART_DATA_LENGTH];
 extern fifo_struct board_rx_fifo;
 extern uint8_t temp_rx_dat;
 extern volatile uint32_t board_rx_ok_count;
