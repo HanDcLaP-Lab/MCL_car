@@ -33,9 +33,8 @@ TRACK_LOCK_THRESHOLD_MS = 150U // dash所需可信跟踪时间
 TRACK_STEP_MAX_MS = 20U  // 单帧置信时间增量上限
 CAR_VALID_MS = 50U         // 小车坐标保质期 (ms)
 TARGET_VALID_MS = 50U      // 目标坐标保质期 (ms)
-ANGLE_VALID_MS = 600U      // 合成角度保质期 (ms)，替代旧 COAST_HOLD_MS
+ANGLE_VALID_MS = 600U      // 合成角度保质期及大角度候选确认时间 (ms)
 ANGLE_MATCH_COS = 0.964f   // cos(15.5°)，同目标角度匹配阈值
-PENDING_ANGLE_CONFIDENCE_THRESHOLD = 40U // 同向state3样本置信度达到40后切换目标
 DASH_DIST_CM = 50.0f       // 车-目标距离低于此值时触发盲冲 (cm)
 DASH_MS_MAX = 700U        // 固定减时前的盲冲时长上限 (ms)
 DASH_TIME_REDUCTION_MS = 50U // 制动距离换算后再固定减少的盲冲时间 (ms)
@@ -43,8 +42,8 @@ POST_DASH_HOLD_MS = 10U   // 完全刹停后静止等待视觉稳定
 DASH_SPEED_MIN_MPS = 0.20f // 可信接近速度下限, 兼可靠性门下界
 DASH_SPEED_MAX_MPS = 1.20f // 可信接近速度上限
 Target identity filter = 5 个 Expiring_Slot_t (car/target/latest/adopted/pending) 替代两套 coast；
-  角度差 < 15.5° 时立即采纳 (续期 adopted)；分歧时 pending 每帧覆盖 latest，连续稳定帧达 40 后切换；
-  adopted 自然过期时优先采纳仍有效的 pending (继承其过期时间)，否则采纳 latest
+  角度差 < 15.5° 时立即采纳；大角度分歧由 state3 启动 pending，同一候选持续 600ms 后切换；
+  state1/2 短暂闪烁不清 pending，候选超过 600ms 未刷新则失效；切换/重采纳时清空旧 Dash 估计，大角度变化启用半加速度
 Dash 方向 = adopted_angle 方向向量 EMA (α=0.3, Cartesian 坐标系, 360° 环绕安全)
 Dash 时间 = 帧间距离差 EMA 给出闭合速度，先扣除 v²/(2*MAX_ACCEL_LINEAR) 制动距离，再换算剩余时间；经 DASH_MS_MAX 限幅后固定减少 50ms
 Dash 距离 = 距离 EMA (α=0.3, 防末帧噪声)
