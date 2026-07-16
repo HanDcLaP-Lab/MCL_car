@@ -52,7 +52,7 @@
 
 // 盲冲 (Dash) 参数
 #define DASH_DIST_CM            50.0f   // 车-目标距离低于此值时触发盲冲 (cm)
-#define DASH_MS_MAX             700U    // 固定增加100ms前的计算时长上限
+#define DASH_MS_MAX             700U    // 固定补偿前的计算时长上限
 #define DASH_SPEED_MIN_MPS      (TARGET_SPEED - 0.1f) // Dash接近速度下限 (m/s); 兼可靠性门下界
 #define DASH_SPEED_MAX_MPS      (TARGET_SPEED + 0.1f) // Dash接近速度上限 (m/s)
 

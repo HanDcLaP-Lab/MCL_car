@@ -151,7 +151,8 @@ static uint32_t Dash_Calculate_Duration_Ms(float distance_cm, float closing_spee
 
     uint32_t duration_ms = (uint32_t)(dash_distance / closing_speed * 1000.0f);
     if (duration_ms > DASH_MS_MAX) duration_ms = DASH_MS_MAX;
-    return duration_ms + 100U;
+    int32_t compensated_ms = (int32_t)duration_ms + DASH_DURATION_COMPENSATION_MS;
+    return compensated_ms > 0 ? (uint32_t)compensated_ms : 0U;
 }
 
 // VISUAL_VELOCITY_GUARD_BEGIN
