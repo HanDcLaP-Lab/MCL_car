@@ -10,7 +10,7 @@
 #define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.028f   // 轮子半径
 #define PWM_MAX_M       5000.0f  // 四轮 PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
-#define TEST_MODE       0         // 1: 仅运行 test_program_1，0: 正常视觉控制
+#define TEST_MODE       1         // 1: 仅运行 test_program_1，0: 正常视觉控制
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f
@@ -41,7 +41,9 @@
 #define ANGLE_VALID_MS          800U   // adopted基础保质期及pending候补保质期 (ms)
 #define ADOPTED_ANGLE_MAX_VALID_MS       1500U // 同方向稳定后 adopted 最大保质期 (ms)
 #define ADOPTED_ANGLE_FULL_CONFIDENCE_MS 800U  // 达到最大保质期所需稳定时间 (约40帧@50Hz)
-#define ANGLE_MATCH_COS         0.9848f // cos(10°)，同目标角度匹配阈值
+#define ANGLE_MATCH_COS         0.9743f // cos(10°)，同目标角度匹配阈值
+#define ADOPTED_OVERRIDE_WINDOW_MS         150U    // [新增] adopted稳定时间低于此值时允许更近信标覆盖 (ms)
+#define ADOPTED_OVERRIDE_LARGE_TURN_COS   0.7071f  // [新增] cos(45°)，覆盖时转角超过此值才启用大转弯限速
 
 #if ADOPTED_ANGLE_MAX_VALID_MS < ANGLE_VALID_MS
 #error "ADOPTED_ANGLE_MAX_VALID_MS must be >= ANGLE_VALID_MS"

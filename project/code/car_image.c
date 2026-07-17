@@ -374,8 +374,23 @@ static uint8_t target_filter_update(uint8_t locked_state) {
     if (adopted_ok) {
         int8_t adopted_match = latest_match_index(adopted_angle.angle);
         if (adopted_match >= 0) {
-            adopted_angle_refresh(&latest_angle[adopted_match], now);
-            pending_angle_reset();
+            // [新增] 刚采纳方向150ms窗口内，允许下传更靠前(更近)的信标覆盖
+            uint8_t did_override = 0;
+            if (adopted_angle_stable_ms < ADOPTED_OVERRIDE_WINDOW_MS) {
+                for (int8_t i = 0; i < adopted_match; i++) {
+                    if (!direction_slot_check(&latest_angle[i])) continue;
+                    if (angle_matches(latest_angle[i].angle, adopted_angle.angle)) continue;
+                    uint8_t is_large = (cosf(latest_angle[i].angle - adopted_angle.angle)
+                                        < ADOPTED_OVERRIDE_LARGE_TURN_COS) ? 1U : 0U;
+                    adopted_angle_replace(&latest_angle[i], is_large);
+                    did_override = 1;
+                    break;
+                }
+            }
+            if (!did_override) {
+                adopted_angle_refresh(&latest_angle[adopted_match], now);
+                pending_angle_reset();
+            }
         }
     } else {
         adopted_angle_stable_ms = 0;
