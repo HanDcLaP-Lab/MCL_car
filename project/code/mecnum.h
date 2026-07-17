@@ -10,7 +10,7 @@
 #define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.028f   // 轮子半径
 #define PWM_MAX_M       5000.0f  // 四轮 PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
-#define TEST_MODE       1         // 1: 仅运行 test_program_1，0: 正常视觉控制
+#define TEST_MODE       0         // 1: 仅运行 test_program_1，0: 正常视觉控制
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f
