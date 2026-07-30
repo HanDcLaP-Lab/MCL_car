@@ -18,8 +18,8 @@
 #define ENCODER_QUAD_rb                    (TC_CH36_ENCODER)                      // 编码器接口
 #define ENCODER_QUAD_rb_PHASE_A            (TC_CH36_ENCODER_CH1_P12_0)            // PHASE_A 对应的引脚
 #define ENCODER_QUAD_rb_PHASE_B            (TC_CH36_ENCODER_CH2_P12_1)            // PHASE_B 对应的引脚
-#define RPM_TO_MPS      7.327e-5f   //ENCODER / 2400 * 30 / 70 * 2 * WHEEL_RADIUS 
-#define ENCODER_DT 0.001f
+#define RPM_TO_MPS      0.00635f   // [修改] 12CPR编码器+97mm轮径：1/48 * 30/70 * π*0.097
+#define ENCODER_DT           0.001f
 typedef struct {
     float lf,rf,lb,rb;//单位为m/s
 } Encoder;
