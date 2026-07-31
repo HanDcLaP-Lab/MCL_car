@@ -84,7 +84,7 @@ int main(void)
     // 底盘解锁由 1ms ISR 在 IMU 校准完成时自动处理 (Chassis_Unblock(DISARM_UNCALIBRATED))
 
     if (TEST_MODE) {
-        system_delay_ms(15000);
+        system_delay_ms(10000);
         test_program_1();
     }
     uint32_t last_drone_rx_time_ms = sys_time_ms;
