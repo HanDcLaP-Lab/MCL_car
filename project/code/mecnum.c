@@ -95,9 +95,12 @@ void PWM_Equal_Proportion_Scale(float *out_lf, float *out_rf, float *out_lb, flo
 // ================== 接口函数实现 ==================
 
 void Mecanum_Set_Velocity(float vx, float vy, float wz){
+    // [CR-18] 三元组跨主循环/ISR 非原子: 短临界区内一次发布完整目标速度
+    uint32_t primask = interrupt_global_disable();
     target_vel.vx = vx;
     target_vel.vy = vy;
     target_vel.wz = wz;
+    interrupt_global_enable(primask);
 }
 
 void Mecanum_Set_Large_Turn_Accel_Limit(uint8_t enable) {
@@ -152,11 +155,13 @@ void Mecanum_Control_Loop(void) {
 
     // 主循环存活看门狗：主循环卡死(如板间 RX 排空死循环、某中断阻塞)时，
     // car_en 处理与通信看门狗(都在主循环里)都无法执行，动力会失控。
-    // 此处在 1ms ISR 内直接判定：超过 MAINLOOP_STALL_MS 未刷新心跳 → 视为未武装，
-    // 强制切断动力。armed 折入现有武装判据，避免从 ISR 改写 disarm_flags 引入新竞态。
-    uint8_t main_alive = TEST_MODE ||
-        ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) <= MAINLOOP_STALL_MS);
-    uint8_t armed = (Chassis_Is_Armed() && main_alive);
+    // [CR-23] 锁存式: ISR 检测到超时 → 置入 DISARM_MAINLOOP_STALL (停车清理并归零
+    // target_vel/smooth_*)。ISR 绝不自动解除该位；只有主循环恢复后解析到一帧
+    // 合法新包才解除 (见 main_cm4.c)，杜绝"停一下又沿旧方向跑"。
+    if (!TEST_MODE && ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) > MAINLOOP_STALL_MS)) {
+        Chassis_Block(DISARM_MAINLOOP_STALL);    // 幂等; 仅置位跳变时执行一次停车清理
+    }
+    uint8_t armed = Chassis_Is_Armed();
 
     // ISR 级时间刹车检查 (dash 到期处理)，由 car_image.c 实现
     Visual_Brake_Check();

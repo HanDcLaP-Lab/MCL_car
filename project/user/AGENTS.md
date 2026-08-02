@@ -46,14 +46,16 @@
 ```
 1. Parse_Board_Uart_Data()              // 排空FIFO并保留最新帧，锁存批次stop事件
 2. 无人机急停判断                       // 批次内任一car_en=0优先，下一批新帧才允许恢复
-3. 无人机通讯看门狗:
-   - 收到数据 → 记录 `last_drone_rx_time_ms`，处理stop事件或最新普通帧
-   - 当前时间距最后合法帧达到1000ms → Chassis_Block(DISARM_COMM_LOST)
+3. 主循环卡死恢复握手                   // DISARM_MAINLOOP_STALL 仅当主循环恢复后解析到合法帧才解除
+4. 无人机通讯看门狗 (按合法帧解析时刻):
+   - 收到校验通过帧 → 清 COMM_LOST；看门狗用 `last_drone_rx_time_ms` (解析时刻) 判定
+   - 距最后合法帧解析 1000ms → Chassis_Block(DISARM_COMM_LOST)
+   - 乱码/碎帧滴流不刷新看门狗 (数据完整性优先)——只有校验通过帧才推进时间基准
    - 注意：重连只清 COMM_LOST 位，人工急停(DISARM_MANUAL)保持 → 不会自动跑起来
-4. seekfree_assistant_data_analysis()   // 无线调参数据处理
-5. 遍历参数更新标志 → Wireless_Update()   // 应用调参值
-6. 同步 PID 参数到4个电机 + 偏航环
-7. system_delay_ms(1)                   // 主循环周期 ~1ms
+5. seekfree_assistant_data_analysis()   // 无线调参数据处理
+6. 遍历参数更新标志 → Wireless_Update()   // 应用调参值
+7. 同步 PID 参数到4个电机 + 偏航环
+8. system_delay_ms(1)                   // 主循环周期 ~1ms
 ```
 
 ## 关键全局变量 (本目录定义)
@@ -64,7 +66,7 @@
 | `board_rx_stop_pending` | `volatile uint8_t` | 本批次任一合法帧出现car_en=0 |
 | `board_rx_fifo_write_fail_count` | `volatile uint32_t` | UART ISR因FIFO满/忙写入失败计数 |
 | `temp_rx_dat` | `uint8_t` | UART1 单字节接收缓冲 |
-| `last_drone_rx_time_ms` | `uint32_t` | 最近合法无人机数据包的物理时刻 (main局部变量) |
+| `last_drone_rx_time_ms` | `uint32_t` | 最近合法无人机数据包的解析时刻 (main局部变量, 看门狗基准) |
 
 ## ANTI-PATTERNS (本目录)
 

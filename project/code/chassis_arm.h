@@ -8,9 +8,10 @@
 // 每个来源只置/清自己那一位，互不干扰；人工急停与通讯丢失彼此独立，
 // 重连只清通讯位，不会覆盖人工急停。
 #define DISARM_UNCALIBRATED  (1u << 0)   // IMU 未校准完成
-#define DISARM_COMM_LOST     (1u << 1)   // 无人机通讯看门狗超时
+#define DISARM_COMM_LOST     (1u << 1)   // 无人机通讯看门狗超时 (按字节到达时刻判定)
 #define DISARM_MANUAL        (1u << 2)   // 无线通道8人工急停
 #define DISARM_DRONE_STOPPED (1u << 3)   // 无人机下传 car_en=0
+#define DISARM_MAINLOOP_STALL (1u << 4)  // 主循环卡死超时 (锁存; 仅新到达的合法帧可解除, 见 main_cm4.c)
 
 // ================== 函数声明 ==================
 /**

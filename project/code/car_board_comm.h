@@ -49,5 +49,6 @@ void Board_Comm_Init(void);               // 通讯初始化
 void Parse_Board_Uart_Data(void);         // 正常工作函数
 void Debug_Parse_Board_Uart_Data(void);   // 调试专用函数
 uint8_t Board_Comm_Consume_Stop_Event(void);   // 消费本批次 car_en=0 锁存
+void Board_Comm_Reset_Rx(void);           // 丢弃积压旧帧并复位接收状态机 (校准结束/恢复边界用)
 
 #endif

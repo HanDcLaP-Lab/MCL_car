@@ -35,6 +35,13 @@ typedef union {
     uint8_t byte_data[UART_PAYLOAD_BYTES];
 } FloatPack;
 
+// 状态机持久状态提到文件作用域: Board_Comm_Reset_Rx() 需要复位它们 (丢弃积压旧帧)
+static RxState state = STEP_HEADER1;
+static uint8_t data_idx = 0;
+static FloatPack temp_pack;
+static uint8_t cal_checksum = 0;
+static uint32_t last_ok_time_ms = 0;
+
 // ================= 通讯初始化 =================
 void Board_Comm_Init(void)
 {
@@ -51,16 +58,25 @@ uint8_t Board_Comm_Consume_Stop_Event(void)
     return stop_pending;
 }
 
+// [CR-22] 复位接收通道: 丢弃 FIFO 中积压的旧帧并复位状态机/完成标志。
+// 在 IMU 校准结束、主循环长时间阻塞恢复等边界调用, 防止旧包在恢复后被当作新指令执行。
+void Board_Comm_Reset_Rx(void)
+{
+    uint32_t primask = interrupt_global_disable();
+    fifo_clear(&board_rx_fifo);
+    state = STEP_HEADER1;
+    data_idx = 0;
+    cal_checksum = 0;
+    board_rx_complete_flag = 0;
+    board_rx_stop_pending = 0;
+    interrupt_global_enable(primask);
+}
+
 static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
 {
     extern volatile uint32_t sys_time_ms;
-    static RxState state = STEP_HEADER1;
-    static uint8_t data_idx = 0;
-    static FloatPack temp_pack;
-    static uint8_t cal_checksum = 0;
     static uint32_t rx_cnt = 0; // [新增] 接收包计数器
-    static uint32_t last_ok_time_ms = 0;
-    
+
     uint8_t read_byte;
     uint32_t len;
     uint32_t primask;

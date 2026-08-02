@@ -83,6 +83,9 @@ int main(void)
     }
     // 底盘解锁由 1ms ISR 在 IMU 校准完成时自动处理 (Chassis_Unblock(DISARM_UNCALIBRATED))
 
+    // [CR-22] 校准结束边界: 丢弃校准期间积压的旧帧与完成标志, 只允许校准完成后到达的新帧参与控制
+    Board_Comm_Reset_Rx();
+
     if (TEST_MODE) {
         system_delay_ms(10000);
         test_program_1();
@@ -112,6 +115,12 @@ int main(void)
             // 收到无人机数据：仅清除通讯丢失这一位。若人工急停(DISARM_MANUAL)仍置位，
             // 小车保持停车，不会因重连被自动唤醒。
             Chassis_Unblock(DISARM_COMM_LOST);
+
+            // [CR-23] 主循环卡死恢复握手: DISARM_MAINLOOP_STALL 由 1ms ISR 锁存, ISR 绝不自动解除;
+            // 仅当主循环恢复后解析到合法帧才解除 (解析时刻判定)。注意: 阻塞后首批解析的
+            // 可能是 FIFO 积压的旧帧, 其数据年龄 ≤ 阻塞时长 (通常 10~50ms, 属正常帧间延迟量级);
+            // 若发送端恰在阻塞期停止, 残余风险由下方通信看门狗 (1000ms) 与控制层目标过期兜底。
+            Chassis_Unblock(DISARM_MAINLOOP_STALL);
 
             last_drone_rx_time_ms = sys_time_ms;
             drone_timeout_debug = 0;

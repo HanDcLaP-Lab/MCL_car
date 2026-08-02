@@ -130,10 +130,10 @@ PIT_CH0 ISR (1ms 硬实时):          car_image → Image_Solve()
 - **无线打印**: 使用 `wireless_uart_*()` / `wireless_uart` 开头的函数。
 - **数值类格式**: 数值之间用 `,` 分隔，结尾使用 `\r\n`，例如 `"dat1,dat2,dat3\r\n"`。
 
-### 坐标系 (来自 README.md)
+### 坐标系 (与 README.md、mecnum.h:113 注释一致)
 ```
 vx > 0 → 车头前进方向    vx < 0 → 后退
-vy > 0 → 向右            vy < 0 → 向左
+vy > 0 → 向左            vy < 0 → 向右
 wz > 0 → 俯视逆时针(左转) wz < 0 → 相反
 yaw角: 顺时针为正
 ```
