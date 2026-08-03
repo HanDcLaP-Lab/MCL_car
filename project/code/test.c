@@ -13,22 +13,44 @@ void test_program_0(void)
     system_delay_ms(1000);
 }
 
-/**
- * @brief 麦克纳姆轮测试程序1
- * 前进0.5m/s持续2s
- */
+// [新增] 无线调参处理：TEST_MODE=1 时 main() 的 for(;;) 不会执行（test_program_1 自带 while(1)），
+// 主循环里的 seekfree_assistant_data_analysis + 参数应用代码 + 末尾的全局参数写入 PID 结构体都不会跑，
+// 因此复制一份到这里。无线串口接收本身由 uart2 ISR (wireless_module_uart_handler) 常驻填充缓冲，无需另行处理。
+extern void Wireless_Update(uint8_t ch, float val);   // 定义在 main_cm4.c
+static void Wireless_Param_Process(void)
+{
+    seekfree_assistant_data_analysis();   // 无线串口接收 + 解析
+
+    // 遍历所有通道，应用上位机下发的参数更新
+    for (int i = 0; i < SEEKFREE_ASSISTANT_SET_PARAMETR_COUNT; i++) {
+        if (seekfree_assistant_parameter_update_flag[i]) {
+            seekfree_assistant_parameter_update_flag[i] = 0;
+            Wireless_Update(i + 1, seekfree_assistant_parameter[i]);
+            wireless_uart_send_string("Param Updated\r\n");
+        }
+    }
+
+    // 将全局参数写入 PID 结构体（对应 main_cm4.c 主循环末尾的赋值部分，测试模式下不执行）
+    pid_lf.kp = KP; pid_lf.ki = KI; pid_lf.kd = KD; pid_lf.max_i = MAX_I;
+    pid_rf.kp = KP; pid_rf.ki = KI; pid_rf.kd = KD; pid_rf.max_i = MAX_I;
+    pid_lb.kp = KP; pid_lb.ki = KI; pid_lb.kd = KD; pid_lb.max_i = MAX_I;
+    pid_rb.kp = KP; pid_rb.ki = KI; pid_rb.kd = KD; pid_rb.max_i = MAX_I;
+    pid_yaw_hold.kp = YAW_KP; pid_yaw_hold.ki = YAW_KI; pid_yaw_hold.kd = YAW_KD; pid_yaw_hold.max_i = YAW_MAX_I;
+}
+
 void test_program_1(void)
 {
     Chassis_Unblock(DISARM_MANUAL);
 
     while(1){
-        //Mecanum_Set_Velocity(0.25f, 0.0f, 0.0f);
-        system_delay_ms(2500);
-
+        Wireless_Param_Process();       // 测试模式下处理无线调参
+        Mecanum_Set_Velocity(0.8f, 0.0f, 0.0f);
+        system_delay_ms(3000);
         // Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
         // system_delay_ms(500);
-        //Mecanum_Set_Velocity(-0.25f, 0.0f, 0.0f);
-        system_delay_ms(2500);
+        Wireless_Param_Process();  
+        Mecanum_Set_Velocity(-0.8f, 0.0f, 0.0f);
+        system_delay_ms(3000);
         // Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
         // system_delay_ms(3000);
     }

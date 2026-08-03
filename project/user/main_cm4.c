@@ -96,7 +96,7 @@ int main(void)
 
     if (TEST_MODE == TEST_MODE_PROGRAM_1) {
         printf("enter waiting");
-        system_delay_ms(10000);
+        system_delay_ms(3000);
         test_program_1();
     } else if (TEST_MODE == TEST_MODE_IMU) {
         test_program_imu();
@@ -239,13 +239,13 @@ void Wireless_Update(uint8_t ch, float val) {
             YAW_RATE_KD = val;
             break;
         case 4:
-            YAW_KP = val;
+            KP = val;
             break;
         case 5:
-            YAW_KI = val;
+            KI = val;
             break;
         case 6:
-            YAW_KD = val;
+            KD = val;
             break;
         case 8:
             if(val == 1){

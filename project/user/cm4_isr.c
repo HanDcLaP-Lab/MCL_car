@@ -43,11 +43,11 @@ extern volatile uint8_t board_comm_debug_pending;
 
 int32_t cnt = 0;
 // **************************** PIT中断函数 ****************************
-void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务函数      
+void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务函数
 {
     pit_isr_flag_clear(PIT_CH0);
+    sys_time_ms++;                      // [修改] 系统时基统一在 ISR 自增 (1kHz)，与控制循环/测试模式解耦
     if (TEST_MODE == TEST_MODE_IMU) {
-        sys_time_ms++;
         cnt++;
         return;
     }
@@ -65,7 +65,7 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务�
 {
     pit_isr_flag_clear(PIT_CH1);
     // [移出中断] 只置标志，实际阻塞式无线打印在主循环里做，避免顶掉 1ms 控制 ISR 节拍
-    printf("%.2f,%.2f,%.2f,%.2f\n", encoder_data.lf , encoder_data.rf , encoder_data.lb , encoder_data.rb);
+    printf("%.2f,%.2f,%.2f,%.2f\n", motor_output.lb , motor_output.rb , encoder_data.lb , encoder_data.rb);
     board_comm_debug_pending = 1;
 }
 

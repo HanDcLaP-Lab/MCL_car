@@ -6,10 +6,10 @@
 
 // ================== 车辆物理参数定义 ==================
 // 请根据实际小车尺寸修改 (米)
-#define CAR_L           0.10f   // 前后轮轴距的一半 (Half Wheel Base)
-#define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
-#define WHEEL_RADIUS    0.028f   // 轮子半径
-#define PWM_MAX_M       5000.0f  // 四轮 PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
+#define CAR_L           0.19f   // 前后轮轴距的一半 (Half Wheel Base)
+#define CAR_W           0.20f   // 左右轮距的一半 (Half Track Width)
+#define WHEEL_RADIUS    0.0485f   // 轮子半径
+#define PWM_MAX_M       9000.0f  // 四轮 PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
 #define TEST_MODE_NORMAL       0
 #define TEST_MODE_PROGRAM_1    1
 #define TEST_MODE_IMU          2

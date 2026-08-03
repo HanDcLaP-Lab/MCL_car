@@ -197,7 +197,7 @@ void encoder_quad_init (encoder_index_enum encoder_n, encoder_channel1_enum ch1_
     
     Cy_Tcpwm_QuadDec_DeInit(encoder_module[encoder_n]);
     
-    encoder_quad_config.encoding_mode           = CY_TCPWM_QUADDEC_X1           ;
+    encoder_quad_config.encoding_mode           = CY_TCPWM_QUADDEC_X4           ;
     encoder_quad_config.range_mode              = CY_TCPWM_QUADDEC_RANGE_0      ;
     encoder_quad_config.interruptSources        = CY_TCPWM_INT_NONE             ;
     encoder_quad_config.indexInputMode          = CY_TCPWM_INPUT_RISING_EDGE    ;

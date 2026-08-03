@@ -3,11 +3,8 @@
 #include "zf_common_headfile.h"
 #include <math.h>
 float f_t = 0;
-// [参数调整] 针对增量式PID (dt=0.001s) 的调优参数
-// KP=3500: 0.5m/s 误差时提供 1750 的基础PWM，确保启动有力
-// KI=3000: 0.5m/s 误差时每秒增加 1500 PWM (3000*0.5*0.001*1000)，消除静差只需约0.5-1秒
-// KD=0: 速度环通常不需要微分项，除非超调严重
-float KP=3500.0f, KI=20000.0f, KD=0.0f, MAX_I=4500.0f;
+
+float KP=5000.0f, KI=48000.0f, KD=0.0f, MAX_I=4500.0f;
 
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;//速度环pid
@@ -136,7 +133,6 @@ volatile uint32_t sys_time_ms = 0;
 volatile uint32_t main_loop_heartbeat_ms = 0;   // 主循环存活心跳 (由 main_cm4 主循环刷新)
 
 void Mecanum_Control_Loop(void) {
-    sys_time_ms++;
 
     // 1. 获取反馈速度
     Encoder_GetCount();
@@ -278,10 +274,10 @@ void Mecanum_Control_Loop(void) {
         motor_output.rb = PID_Calculate_Incremental(&pid_rb, err_rb, CONTROL_DT);
 
         // 简单的误差死区处理，防止静止时电机高频异响抖动
-        if (fabsf(target_vel.v_lf) < 0.01f && fabsf(err_lf) < 0.03f) motor_output.lf = 0;
-        if (fabsf(target_vel.v_rf) < 0.01f && fabsf(err_rf) < 0.03f) motor_output.rf = 0;
-        if (fabsf(target_vel.v_lb) < 0.01f && fabsf(err_lb) < 0.03f) motor_output.lb = 0;
-        if (fabsf(target_vel.v_rb) < 0.01f && fabsf(err_rb) < 0.03f) motor_output.rb = 0;
+        if (fabsf(target_vel.v_lf) < 0.01f && fabsf(err_lf) < 0.1f) motor_output.lf = 0;
+        if (fabsf(target_vel.v_rf) < 0.01f && fabsf(err_rf) < 0.1f) motor_output.rf = 0;
+        if (fabsf(target_vel.v_lb) < 0.01f && fabsf(err_lb) < 0.1f) motor_output.lb = 0;
+        if (fabsf(target_vel.v_rb) < 0.01f && fabsf(err_rb) < 0.1f) motor_output.rb = 0;
 
         // 步骤 1：PWM 等比例缩放，保证打滑或极限加速时，推力矢量不发生畸变
         PWM_Equal_Proportion_Scale(&motor_output.lf, &motor_output.rf, 
