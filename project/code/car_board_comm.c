@@ -62,14 +62,12 @@ uint8_t Board_Comm_Consume_Stop_Event(void)
 // 在 IMU 校准结束、主循环长时间阻塞恢复等边界调用, 防止旧包在恢复后被当作新指令执行。
 void Board_Comm_Reset_Rx(void)
 {
-    uint32_t primask = interrupt_global_disable();
     fifo_clear(&board_rx_fifo);
     state = STEP_HEADER1;
     data_idx = 0;
     cal_checksum = 0;
     board_rx_complete_flag = 0;
     board_rx_stop_pending = 0;
-    interrupt_global_enable(primask);
 }
 
 static void Core_Parse_Board_Uart_Data(uint8_t debug_en)

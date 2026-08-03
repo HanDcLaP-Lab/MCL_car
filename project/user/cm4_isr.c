@@ -65,6 +65,7 @@ void pit0_ch1_isr()                     // 定时器通道 1 周期中断服务�
 {
     pit_isr_flag_clear(PIT_CH1);
     // [移出中断] 只置标志，实际阻塞式无线打印在主循环里做，避免顶掉 1ms 控制 ISR 节拍
+    printf("%.2f,%.2f,%.2f,%.2f\n", encoder_data.lf , encoder_data.rf , encoder_data.lb , encoder_data.rb);
     board_comm_debug_pending = 1;
 }
 

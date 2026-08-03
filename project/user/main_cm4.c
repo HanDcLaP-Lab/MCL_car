@@ -73,7 +73,7 @@ int main(void)
     }
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
-    
+    printf("seekfree init done");
     pit_ms_init(PIT_CH1, 200);
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
@@ -88,12 +88,14 @@ int main(void)
         }
         system_delay_ms(1);
     }
+    printf("imu init done");
     // 底盘解锁由 1ms ISR 在 IMU 校准完成时自动处理 (Chassis_Unblock(DISARM_UNCALIBRATED))
 
     // [CR-22] 校准结束边界: 丢弃校准期间积压的旧帧与完成标志, 只允许校准完成后到达的新帧参与控制
     Board_Comm_Reset_Rx();
 
     if (TEST_MODE == TEST_MODE_PROGRAM_1) {
+        printf("enter waiting");
         system_delay_ms(10000);
         test_program_1();
     } else if (TEST_MODE == TEST_MODE_IMU) {

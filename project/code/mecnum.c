@@ -95,12 +95,9 @@ void PWM_Equal_Proportion_Scale(float *out_lf, float *out_rf, float *out_lb, flo
 // ================== 接口函数实现 ==================
 
 void Mecanum_Set_Velocity(float vx, float vy, float wz){
-    // [CR-18] 三元组跨主循环/ISR 非原子: 短临界区内一次发布完整目标速度
-    uint32_t primask = interrupt_global_disable();
     target_vel.vx = vx;
     target_vel.vy = vy;
     target_vel.wz = wz;
-    interrupt_global_enable(primask);
 }
 
 void Mecanum_Set_Large_Turn_Accel_Limit(uint8_t enable) {

@@ -9,10 +9,10 @@ void Encoder_Init(){
     encoder_quad_init(ENCODER_QUAD_lb, ENCODER_QUAD_lb_PHASE_A, ENCODER_QUAD_lb_PHASE_B);  // 初始化编码器模块与引脚 正交编码器模式
     encoder_quad_init(ENCODER_QUAD_rb, ENCODER_QUAD_rb_PHASE_A, ENCODER_QUAD_rb_PHASE_B);  // 初始化编码器模块与引脚 正交编码器模式
     // [修改] 12CPR低分辨率编码器：大幅降Q增压测量、提R低压历史——K≈3×旧值，响应更快
-    Kalman_Init(&K_lf, 0.02f, 0.08f, 0.0f);
-    Kalman_Init(&K_rf, 0.02f, 0.08f, 0.0f);
-    Kalman_Init(&K_lb, 0.02f, 0.08f, 0.0f);
-    Kalman_Init(&K_rb, 0.02f, 0.08f, 0.0f);
+    Kalman_Init(&K_lf, 0.02f, 0.8f, 0.0f);
+    Kalman_Init(&K_rf, 0.02f, 0.8f, 0.0f);
+    Kalman_Init(&K_lb, 0.02f, 0.8f, 0.0f);
+    Kalman_Init(&K_rb, 0.02f, 0.8f, 0.0f);
 }
 
 void Encoder_GetCount(){
