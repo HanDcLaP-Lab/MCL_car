@@ -35,6 +35,23 @@ void test_program_1(void)
     Chassis_Block(DISARM_MANUAL);
 }
 
+void test_program_imu(void)
+{
+    uint32_t print_time_ms = sys_time_ms;
+
+    Chassis_Block(DISARM_MANUAL);
+    Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
+
+    while(1){
+        IMU_Car_Update_Loop();
+        if ((uint32_t)(sys_time_ms - print_time_ms) >= 500U) {
+            print_time_ms = sys_time_ms;
+            print_imu();
+        }
+        system_delay_ms(1);
+    }
+}
+
 /**
  * @brief 麦克纳姆轮测试程序2
  * 向右0.5m/s持续2s

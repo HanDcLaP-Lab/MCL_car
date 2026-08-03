@@ -1,7 +1,7 @@
-#include "imu_car_rc.h"
+#include "imu_car.h"
 #include <math.h>
 
-IMU_Car_RC_Data_t imu_car_rc_data = {0}; 
+IMU_Car_Data_t imu_car_data = {0};
 
 static double sum_gx = 0.0;
 static double sum_gy = 0.0;
@@ -35,7 +35,7 @@ static float Wrap_Angle_180(float angle) {
     return angle;
 }
 
-static void IMU_Car_RC_Reset_Attitude_State(void) {
+static void IMU_Car_Reset_Attitude_State(void) {
     q0 = 1.0f;
     q1 = 0.0f;
     q2 = 0.0f;
@@ -44,7 +44,7 @@ static void IMU_Car_RC_Reset_Attitude_State(void) {
     eyInt = 0.0f;
 }
 
-static void IMU_Car_RC_Init_Filters(void) {
+static void IMU_Car_Init_Filters(void) {
     Kalman_Init(&k_acc_x, 0.001f, 0.05f, 0.0f);
     Kalman_Init(&k_acc_y, 0.001f, 0.05f, 0.0f);
     Kalman_Init(&k_acc_z, 0.001f, 0.05f, 0.0f);
@@ -53,7 +53,7 @@ static void IMU_Car_RC_Init_Filters(void) {
     Kalman_Init(&k_gyro_z, 1e-3f, 1e-3f, 0.0f);
 }
 
-static void IMU_Car_RC_Init_Attitude_From_Accel(float avg_ax, float avg_ay, float avg_az) {
+static void IMU_Car_Init_Attitude_From_Accel(float avg_ax, float avg_ay, float avg_az) {
     float init_ax = IMU_MAP_AX(avg_ax, avg_ay, avg_az);
     float init_ay = IMU_MAP_AY(avg_ax, avg_ay, avg_az);
     float init_az = IMU_MAP_AZ(avg_ax, avg_ay, avg_az);
@@ -81,16 +81,16 @@ static void IMU_Car_RC_Init_Attitude_From_Accel(float avg_ax, float avg_ay, floa
         q2 /= norm;
         q3 /= norm;
     } else {
-        IMU_Car_RC_Reset_Attitude_State();
+        IMU_Car_Reset_Attitude_State();
     }
 
     exInt = 0.0f;
     eyInt = 0.0f;
-    imu_car_rc_data.roll = init_roll * 180.0f / PI;
-    imu_car_rc_data.pitch = init_pitch * 180.0f / PI;
+    imu_car_data.roll = init_roll * 180.0f / PI;
+    imu_car_data.pitch = init_pitch * 180.0f / PI;
 }
 
-static void IMU_Car_RC_Mahony_Update(float gx, float gy, float gz, float ax, float ay, float az) {
+static void IMU_Car_Mahony_Update(float gx, float gy, float gz, float ax, float ay, float az) {
     float acc_norm = sqrtf(ax * ax + ay * ay + az * az);
     if (acc_norm < 0.1f || acc_norm != acc_norm) {
         return;
@@ -157,7 +157,7 @@ static void IMU_Car_RC_Mahony_Update(float gx, float gy, float gz, float ax, flo
     }
 }
 
-void IMU_Car_RC_Init(void){
+void IMU_Car_Init(void){
     sum_gx = 0.0;
     sum_gy = 0.0;
     sum_gz = 0.0;
@@ -169,15 +169,15 @@ void IMU_Car_RC_Init(void){
     offset_gz = 0.0f;
     calib_discard_cnt = 0;
     calib_cnt = 0;
-    imu_car_rc_data.is_calibrated = 0;
-    IMU_Car_RC_Reset_Attitude_State();
-    IMU_Car_RC_Init_Filters();
+    imu_car_data.is_calibrated = 0;
+    IMU_Car_Reset_Attitude_State();
+    IMU_Car_Init_Filters();
 
     while(1)
     {
-         if(imu660rc_init(IMU660RC_QUARTERNION_DISABLE))                        // 关闭内部四元数，1ms 控制循环直接读取原始 acc/gyro
+         if(imu660ra_init())                                                    // 1ms 控制循环直接读取原始 acc/gyro
         {
-           printf("\r\n imu660rc init error.");                                 // imu660rc 初始化失败
+           printf("\r\n imu660ra init error.");                                 // imu660ra 初始化失败
         }
         else
         {
@@ -186,23 +186,23 @@ void IMU_Car_RC_Init(void){
     }
 }
 
-void IMU_Car_RC_Update_Loop(void){
-    imu660rc_get_acc();
-    imu660rc_get_gyro();
+void IMU_Car_Update_Loop(void){
+    imu660ra_get_acc();
+    imu660ra_get_gyro();
 
     // 这里不再使用驱动欧拉角，避免 roll/pitch 修正耦合进 yaw。
-    if (imu660rc_acc_x == 0 && imu660rc_acc_y == 0 && imu660rc_acc_z == 0
-        && imu660rc_gyro_x == 0 && imu660rc_gyro_y == 0 && imu660rc_gyro_z == 0) {
+    if (imu660ra_acc_x == 0 && imu660ra_acc_y == 0 && imu660ra_acc_z == 0
+        && imu660ra_gyro_x == 0 && imu660ra_gyro_y == 0 && imu660ra_gyro_z == 0) {
         return;
     }
 
-    float raw_gx = imu660rc_gyro_transition(imu660rc_gyro_x);
-    float raw_gy = imu660rc_gyro_transition(imu660rc_gyro_y);
-    float raw_gz = imu660rc_gyro_transition(imu660rc_gyro_z);
+    float raw_gx = imu660ra_gyro_transition(imu660ra_gyro_x);
+    float raw_gy = imu660ra_gyro_transition(imu660ra_gyro_y);
+    float raw_gz = imu660ra_gyro_transition(imu660ra_gyro_z);
 
-    float raw_ax = imu660rc_acc_transition(imu660rc_acc_x);
-    float raw_ay = imu660rc_acc_transition(imu660rc_acc_y);
-    float raw_az = imu660rc_acc_transition(imu660rc_acc_z);
+    float raw_ax = imu660ra_acc_transition(imu660ra_acc_x);
+    float raw_ay = imu660ra_acc_transition(imu660ra_acc_y);
+    float raw_az = imu660ra_acc_transition(imu660ra_acc_z);
 
     raw_ax = Kalman_Update(&k_acc_x, raw_ax);
     raw_ay = Kalman_Update(&k_acc_y, raw_ay);
@@ -211,7 +211,7 @@ void IMU_Car_RC_Update_Loop(void){
     raw_gy = Kalman_Update(&k_gyro_y, raw_gy);
     raw_gz = Kalman_Update(&k_gyro_z, raw_gz);
 
-    if (imu_car_rc_data.is_calibrated == 0) {
+    if (imu_car_data.is_calibrated == 0) {
         if (calib_discard_cnt < IMU_CAR_CALIB_DISCARD_SAMPLES) {
             calib_discard_cnt++;
             return;
@@ -228,15 +228,15 @@ void IMU_Car_RC_Update_Loop(void){
             offset_gx = (float)(sum_gx / (double)IMU_CAR_CALIB_SAMPLES);
             offset_gy = (float)(sum_gy / (double)IMU_CAR_CALIB_SAMPLES);
             offset_gz = (float)(sum_gz / (double)IMU_CAR_CALIB_SAMPLES);
-            IMU_Car_RC_Init_Attitude_From_Accel(
+            IMU_Car_Init_Attitude_From_Accel(
                 (float)(sum_ax / (double)IMU_CAR_CALIB_SAMPLES),
                 (float)(sum_ay / (double)IMU_CAR_CALIB_SAMPLES),
                 (float)(sum_az / (double)IMU_CAR_CALIB_SAMPLES));
 
-            imu_car_rc_data.yaw = 0.0f;
-            imu_car_rc_data.yaw_total = 0.0f;
-            imu_car_rc_data.yaw_rate = 0.0f;
-            imu_car_rc_data.is_calibrated = 1;
+            imu_car_data.yaw = 0.0f;
+            imu_car_data.yaw_total = 0.0f;
+            imu_car_data.yaw_rate = 0.0f;
+            imu_car_data.is_calibrated = 1;
         }
         return;
     }
@@ -258,19 +258,19 @@ void IMU_Car_RC_Update_Loop(void){
     }
 
     // roll/pitch 来自 Mahony 融合；加速度模长异常时自动降权，避免坡面运动把线加速度当成姿态。
-    IMU_Car_RC_Mahony_Update(map_gx, map_gy, map_gz, map_ax, map_ay, map_az);
-    imu_car_rc_data.roll = atan2f(2.0f * (q0 * q1 + q2 * q3),
+    IMU_Car_Mahony_Update(map_gx, map_gy, map_gz, map_ax, map_ay, map_az);
+    imu_car_data.roll = atan2f(2.0f * (q0 * q1 + q2 * q3),
                                   1.0f - 2.0f * (q1 * q1 + q2 * q2)) * 180.0f / PI;
 
     float sinp = 2.0f * (q0 * q2 - q3 * q1);
     if (fabsf(sinp) >= 1.0f) {
-        imu_car_rc_data.pitch = (sinp >= 0.0f) ? 90.0f : -90.0f;
+        imu_car_data.pitch = (sinp >= 0.0f) ? 90.0f : -90.0f;
     } else {
-        imu_car_rc_data.pitch = asinf(sinp) * 180.0f / PI;
+        imu_car_data.pitch = asinf(sinp) * 180.0f / PI;
     }
 
-    float roll_rad = imu_car_rc_data.roll * (PI / 180.0f);
-    float pitch_rad = imu_car_rc_data.pitch * (PI / 180.0f);
+    float roll_rad = imu_car_data.roll * (PI / 180.0f);
+    float pitch_rad = imu_car_data.pitch * (PI / 180.0f);
     float cos_pitch = cosf(pitch_rad);
     if (fabsf(cos_pitch) < 0.1f) {
         cos_pitch = (cos_pitch >= 0.0f) ? 0.1f : -0.1f;
@@ -281,7 +281,7 @@ void IMU_Car_RC_Update_Loop(void){
         yaw_rate = 0.0f;
     }
 
-    imu_car_rc_data.yaw_rate = yaw_rate;
-    imu_car_rc_data.yaw_total += yaw_rate * IMU_CAR_DT;
-    imu_car_rc_data.yaw = Wrap_Angle_180(imu_car_rc_data.yaw_total);
+    imu_car_data.yaw_rate = yaw_rate;
+    imu_car_data.yaw_total += yaw_rate * IMU_CAR_DT;
+    imu_car_data.yaw = Wrap_Angle_180(imu_car_data.yaw_total);
 }

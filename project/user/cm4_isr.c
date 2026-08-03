@@ -46,9 +46,14 @@ int32_t cnt = 0;
 void pit0_ch0_isr()                     // 定时器通道 0 周期中断服务函数      
 {
     pit_isr_flag_clear(PIT_CH0);
+    if (TEST_MODE == TEST_MODE_IMU) {
+        sys_time_ms++;
+        cnt++;
+        return;
+    }
     tsl1401_collect_pit_handler(); ///逐飞库空例程自带，意义不明
     
-    IMU_Car_RC_Update_Loop();
+    IMU_Car_Update_Loop();
 
     Mecanum_Control_Loop();
     //Encoder_Test_Print();

@@ -26,7 +26,7 @@ MCL_car/
 ├── libraries/         # 第三方库 (zf_*) — 只读，不要修改
 │   ├── zf_common/     #   公共头文件、时钟、调试、FIFO、中断
 │   ├── zf_driver/     #   硬件驱动层 (ADC/DMA/GPIO/PIT/PWM/UART/SPI/编码器)
-│   ├── zf_device/     #   外设驱动 (IMU660RC/摄像头/OLED/无线模块等)
+│   ├── zf_device/     #   外设驱动 (IMU660RA/摄像头/OLED/无线模块等)
 │   ├── zf_components/ #   组件层 (seekfree_assistant 无线调参)
 │   ├── sdk/           #   Infineon TRAVEO T2G 官方 SDK (Cypress HAL)
 │   └── doc/           #   GPL3 许可证、版本信息
@@ -41,7 +41,7 @@ MCL_car/
 | 底盘运动控制 / 麦轮解算 | `project/code/mecnum.c` | 1ms控制环、逆运动学、轮速PID |
 | PID 控制器 | `project/code/pid.c` | 增量式 + 位置式 PID |
 | 编码器读取 (4个电机) | `project/code/encoder.c` | 正交编码器 + 卡尔曼滤波 |
-| IMU / 陀螺仪 | `project/code/imu_car_rc.c` | IMU660RC，Kalman/Mahony 姿态融合和坐标系映射 |
+| IMU / 陀螺仪 | `project/code/imu_car.c` | IMU660RA，acc/gyro ODR均为800Hz，1kHz Kalman/Mahony姿态融合和坐标系映射 |
 | 板间通讯 (接收无人机数据) | `project/code/car_board_comm.c` | UART1, 1000000, AA55协议，12个float |
 | 视觉追踪状态机 / 坐标变换 | `project/code/car_image.c` | Image_Solve()、State0~3、目标角度筛选与距离触发盲冲 |
 | 无线串口调试 / 调参 | `project/code/wireless_uart.c` | UART2, SEEKFREE无线模块 |
@@ -65,7 +65,7 @@ main() 主循环 (~1ms):              car_board_comm 解析12个float
   └─ 同步PID参数
                                     
 PIT_CH0 ISR (1ms 硬实时):          car_image → Image_Solve()
-  ├─ IMU_Car_RC_Update_Loop()        坐标变换: 无人机系→车体系
+  ├─ IMU_Car_Update_Loop()           坐标变换: 无人机系→车体系
   └─ Mecanum_Control_Loop()          输出: 距离 + 方位角
        ├─ 编码器读取 + 卡尔曼
        ├─ 目标速度斜坡平滑
@@ -95,9 +95,9 @@ PIT_CH0 ISR (1ms 硬实时):          car_image → Image_Solve()
 - **宏**: `MODULE_PREFIX_DETAIL` — 全大写 + 下划线
   - `MOTOR_LF_PWM`, `CAR_L`, `MAX_ACCEL_LINEAR`, `BOARD_BAUDRATE`
 - **类型**: `XXX_t` 后缀 (主流风格)
-  - `PID_t`, `Target_t`, `IMU_Car_RC_Data_t`
+  - `PID_t`, `Target_t`, `IMU_Car_Data_t`
   - 例外: `Encoder`, `KalmanFilter1` (无后缀)
-- **变量**: snake_case — `encoder_data`, `imu_car_rc_data`, `target_vel`
+- **变量**: snake_case — `encoder_data`, `imu_car_data`, `target_vel`
 - **全局常量 (可调参)**: 全大写 — `KP`, `KI`, `KD`, `YAW_KP`, `MAX_I`
 
 ### Include Guard
@@ -155,6 +155,6 @@ yaw角: 顺时针为正
 - **编译环境**: 需要在 IAR 9.40.1 中打开 `project/iar/cyt2bl3.eww`，选 Debug_m4 配置编译
 - **编码格式**: main 和 isr 文件使用 UTF-8
 - **无线调参**: 通过 SEEKFREE Assistant 上位机 + 无线串口模块实时调整 PID 参数
-- **IMU 校准**: 上电后需等待 `imu_car_rc_data.is_calibrated == 1`，期间电机锁定
+- **IMU 校准**: 上电后需等待 `imu_car_data.is_calibrated == 1`，期间电机锁定
 - **急停**: 无线调参通道8 设为1 → 停车；设为0 → 解锁
 - **版本号格式**: README.md 使用 `X.Ya/b/c` 格式记录更新

@@ -3,6 +3,7 @@
 
 void test_program_0(void);  // 停止
 void test_program_1(void);  // 前进0.5m/s持续2s
+void test_program_imu(void); // 静止并持续输出 IMU 姿态
 void test_program_2(void);  // 向右0.5m/s持续2s
 void test_program_3(void);  // 后退0.5m/s持续2s
 void test_program_4(void);  // 向左0.5m/s持续2s

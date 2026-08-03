@@ -297,7 +297,7 @@ static void position_slot_refresh(Position_Slot_t *slot, float x, float y,
 // 将本帧三个信标分别解算到小车车体系。第一候选沿用无人机滤波距离，
 // 其余候选没有独立距离字段，因此使用同一对原始坐标计算距离。
 static void latest_angles_update(uint32_t now) {
-    float delta = (imu_car_rc_data.yaw - uart_data[4]) * ((float)M_PI / 180.0f);
+    float delta = (imu_car_data.yaw - uart_data[4]) * ((float)M_PI / 180.0f);
     float cos_delta = cosf(delta);
     float sin_delta = sinf(delta);
 

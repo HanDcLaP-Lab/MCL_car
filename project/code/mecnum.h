@@ -10,7 +10,10 @@
 #define CAR_W           0.09f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.028f   // 轮子半径
 #define PWM_MAX_M       5000.0f  // 四轮 PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
-#define TEST_MODE       0         // 1: 仅运行 test_program_1，0: 正常视觉控制
+#define TEST_MODE_NORMAL       0
+#define TEST_MODE_PROGRAM_1    1
+#define TEST_MODE_IMU          2
+#define TEST_MODE              TEST_MODE_PROGRAM_1
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f
@@ -25,10 +28,10 @@
 #define MOTOR_RB_PWM    TCPWM_CH52_P18_5    // 右后 PWM
 
 // 电机方向引脚定义
-#define MOTOR_LF_DIR    P18_6               // 左前 DIR
+#define MOTOR_LF_DIR    P06_3             // 左前 DIR
 #define MOTOR_RF_DIR    P00_2               // 右前 DIR
 #define MOTOR_LB_DIR    P18_4               // 左后 DIR
-#define MOTOR_RB_DIR    P06_3               // 右后 DIR
+#define MOTOR_RB_DIR    P18_6               // 右后 DIR
 
 // 记忆/滑行参数
 #define TRACK_MEMORY_MS          1000U // 可靠跟踪置信时间上限 (ms)

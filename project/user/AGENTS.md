@@ -16,13 +16,13 @@
 2. debug_init()                         // 调试串口
 3. system_delay_ms(1500)               // 等待外设上电稳定
 4. Board_Comm_Init()                    // UART1 板间通讯
-5. IMU_Car_RC_Init()                    // IMU660RC 初始化
+5. IMU_Car_Init()                       // IMU660RA 初始化
 6. Encoder_Init()                       // 4路编码器
 7. Mecanum_Init()                       // 麦轮底盘 (GPIO/PWM/PID)
 8. wireless_uart_init_()                // 无线串口
 9. seekfree_assistant_interface_init()  // 无线调参协议
 10. pit_ms_init(PIT_CH1, 200)           // 200ms 定时器 (主循环调试打印触发)
-11. pit_ms_init(PIT_CH0, 1)            // 1ms 定时器 (主控制循环)
+11. pit_ms_init(PIT_CH0, 1)            // 1ms 定时器 (IMU姿态与底盘控制循环)
 12. 校准完成后检查 TEST_MODE             // 为1时直接进入test_program_1，不进入正式主循环
 13. 进入主循环 for(;;)                    // TEST_MODE为0时执行正式控制
 ```
@@ -31,7 +31,7 @@
 
 | 中断 | 周期/触发 | 处理内容 |
 |------|-----------|----------|
-| **PIT_CH0** | 1ms | ⚡ 硬实时：轮询 IMU660RC 原始 acc/gyro，更新 Kalman/Mahony 姿态 + `Mecanum_Control_Loop()` |
+| **PIT_CH0** | 1ms | ⚡ 硬实时：轮询800Hz ODR的IMU660RA原始acc/gyro，以1kHz更新Kalman/Mahony姿态 + `Mecanum_Control_Loop()` |
 | **PIT_CH1** | 200ms | 置位主循环调试打印标志，避免在中断内阻塞输出 |
 | **PIT_CH2** | 未初始化 | 预留，原用于视觉控制周期 |
 | **UART0** | RX中断 | 调试串口 `debug_interrupr_handler()` |

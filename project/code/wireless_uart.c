@@ -62,7 +62,7 @@ void wireless_uart_output_pid(void){
     wireless_uart_send_string(",");
     wireless_uart_send_float(pid_lf.output);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_rc_data.yaw); // 增量式PID积分项无意义，改为显示Yaw角
+    wireless_uart_send_float(imu_car_data.yaw); // 增量式PID积分项无意义，改为显示Yaw角
     wireless_uart_send_string("\n");
 }
 
@@ -79,18 +79,18 @@ void wireless_uart_output_target(void){
     //wireless_uart_send_string(",");
     wireless_uart_send_int((int32_t)Chassis_Get_Disarm_Flags());
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_rc_data.yaw_total);
+    wireless_uart_send_float(imu_car_data.yaw_total);
     wireless_uart_send_string(",");
     wireless_uart_send_float(target_vel.v_lf);
     wireless_uart_send_string("\n");
 }
 
 void wireless_uart_output_imu(void){
-    wireless_uart_send_float(imu_car_rc_data.roll);
+    wireless_uart_send_float(imu_car_data.roll);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_rc_data.pitch);
+    wireless_uart_send_float(imu_car_data.pitch);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(imu_car_rc_data.yaw);
+    wireless_uart_send_float(imu_car_data.yaw);
     wireless_uart_send_string("\r\n");
 }
 void wireless_uart_output_encoder(void){
@@ -146,7 +146,7 @@ void wireless_uart_output_stop_debug(void) {
     wireless_uart_send_string(",ls:");
     wireless_uart_send_int((int32_t)((uint8_t)uart_data[5]));
     wireless_uart_send_string(",cal:");
-    wireless_uart_send_int((int32_t)imu_car_rc_data.is_calibrated);
+    wireless_uart_send_int((int32_t)imu_car_data.is_calibrated);
     wireless_uart_send_string(",to:");
     wireless_uart_send_int((int32_t)drone_timeout_debug);
     wireless_uart_send_string(",rx:");
@@ -212,5 +212,5 @@ void wireless_uart_output_commu(void){
 }
 
 void print_imu(void){
-    printf("%.2f,%.2f,%.2f\r\n", imu_car_rc_data.roll, imu_car_rc_data.pitch, imu_car_rc_data.yaw);
+    printf("%.2f,%.2f,%.2f\r\n", imu_car_data.roll, imu_car_data.pitch, imu_car_data.yaw);
 }

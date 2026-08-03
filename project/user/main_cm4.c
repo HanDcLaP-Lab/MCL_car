@@ -65,9 +65,12 @@ int main(void)
     system_delay_ms(1500);
     Board_Comm_Init();
 
-    IMU_Car_RC_Init();
+    IMU_Car_Init();
     Encoder_Init();
     Mecanum_Init();
+    if (TEST_MODE == TEST_MODE_IMU) {
+        Chassis_Block(DISARM_MANUAL);
+    }
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     
@@ -75,10 +78,14 @@ int main(void)
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     pit_ms_init(PIT_CH0, 1);
-    while (imu_car_rc_data.is_calibrated == 0) {
+    while (imu_car_data.is_calibrated == 0) {
         main_loop_heartbeat_ms = sys_time_ms;   // 存活心跳：校准等待期也喂狗，防止刚武装即误判卡死
-        Parse_Board_Uart_Data();
-        seekfree_assistant_data_analysis();
+        if (TEST_MODE == TEST_MODE_IMU) {
+            IMU_Car_Update_Loop();
+        } else {
+            Parse_Board_Uart_Data();
+            seekfree_assistant_data_analysis();
+        }
         system_delay_ms(1);
     }
     // 底盘解锁由 1ms ISR 在 IMU 校准完成时自动处理 (Chassis_Unblock(DISARM_UNCALIBRATED))
@@ -86,9 +93,11 @@ int main(void)
     // [CR-22] 校准结束边界: 丢弃校准期间积压的旧帧与完成标志, 只允许校准完成后到达的新帧参与控制
     Board_Comm_Reset_Rx();
 
-    if (TEST_MODE) {
+    if (TEST_MODE == TEST_MODE_PROGRAM_1) {
         system_delay_ms(10000);
         test_program_1();
+    } else if (TEST_MODE == TEST_MODE_IMU) {
+        test_program_imu();
     }
     uint32_t last_drone_rx_time_ms = sys_time_ms;
     // 此处编写用户代码 例如外设初始化代码等
@@ -185,10 +194,10 @@ int main(void)
             //     comm_debug_div = 0;
             //     wireless_uart_output_comm_debug();
             // }
-            //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_rc_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
+            //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
             //Current_speed_display();
             //wireless_uart_output_motor();
-            //print_imu();
+            // print_imu();
             //wireless_uart_output_commu();
             // printf("%.2f," , uart_data[0]);
             // printf("%.2f," , uart_data[1]);

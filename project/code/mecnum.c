@@ -146,7 +146,7 @@ void Mecanum_Control_Loop(void) {
 
     // 检查 IMU 是否校准完毕：未校准则锁定底盘并退出。
     // Block/Unblock 幂等，校准期间每 tick 调用也不会重复执行停车清理。
-    if(imu_car_rc_data.is_calibrated == 1){
+    if(imu_car_data.is_calibrated == 1){
         Chassis_Unblock(DISARM_UNCALIBRATED);
     }else{
         Chassis_Block(DISARM_UNCALIBRATED);
@@ -158,7 +158,7 @@ void Mecanum_Control_Loop(void) {
     // [CR-23] 锁存式: ISR 检测到超时 → 置入 DISARM_MAINLOOP_STALL (停车清理并归零
     // target_vel/smooth_*)。ISR 绝不自动解除该位；只有主循环恢复后解析到一帧
     // 合法新包才解除 (见 main_cm4.c)，杜绝"停一下又沿旧方向跑"。
-    if (!TEST_MODE && ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) > MAINLOOP_STALL_MS)) {
+    if (TEST_MODE == TEST_MODE_NORMAL && ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) > MAINLOOP_STALL_MS)) {
         Chassis_Block(DISARM_MAINLOOP_STALL);    // 幂等; 仅置位跳变时执行一次停车清理
     }
     uint8_t armed = Chassis_Is_Armed();
@@ -212,13 +212,13 @@ void Mecanum_Control_Loop(void) {
     
     if (armed) {
             // 将陀螺仪实际角速度从 deg/s 转换为 rad/s，统一量纲！
-            float current_rate_rad = imu_car_rc_data.yaw_rate * ((float)M_PI / 180.0f);
+            float current_rate_rad = imu_car_data.yaw_rate * ((float)M_PI / 180.0f);
 
         // 如果外部没有要求自转 (判断平滑后的 smooth_wz 近似为0)，启动 Yaw 锁死
         if (fabsf(smooth_wz) < 0.05f) {
             
             // --- 外环：角度控制 (只管方向) ---
-            float yaw_error = 0.0f - imu_car_rc_data.yaw_total; 
+            float yaw_error = 0.0f - imu_car_data.yaw_total;
             
             // 角度死区：1.5度以内放弃纠偏，防止原地鬼畜发热
             if (fabsf(yaw_error) < 1.5f) {
