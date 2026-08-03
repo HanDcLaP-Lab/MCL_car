@@ -13,7 +13,7 @@
 #define TEST_MODE_NORMAL       0
 #define TEST_MODE_PROGRAM_1    1
 #define TEST_MODE_IMU          2
-#define TEST_MODE              1
+#define TEST_MODE              0
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f
