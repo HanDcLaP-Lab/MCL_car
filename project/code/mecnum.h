@@ -11,9 +11,9 @@
 #define WHEEL_RADIUS    0.0485f   // 轮子半径
 #define PWM_MAX_M       9000.0f  // 四轮 PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
 #define TEST_MODE_NORMAL       0
-#define TEST_MODE_PROGRAM_1    1
+#define TEST_MODE_TEST         1
 #define TEST_MODE_IMU          2
-#define TEST_MODE              0
+#define TEST_MODE              1
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f
@@ -118,6 +118,9 @@ extern float ang_out;
  */
 void Mecanum_Set_Velocity(float vx, float vy, float wz);
 void Mecanum_Set_Large_Turn_Accel_Limit(uint8_t enable);
+// [新增] 测试开环直驱: 绕过斜坡/偏航/轮速PID直接输出PWM (仅测试模式使用)
+void Mecanum_Set_PWM_Open_Loop(float lf, float rf, float lb, float rb);
+void Mecanum_Set_PWM_Open_Loop_Off(void);
 
 /**
  * @brief 底盘控制循环，建议在定时器中断中调用 (周期需与 CONTROL_DT 一致)

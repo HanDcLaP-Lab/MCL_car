@@ -94,13 +94,14 @@ int main(void)
     // [CR-22] 校准结束边界: 丢弃校准期间积压的旧帧与完成标志, 只允许校准完成后到达的新帧参与控制
     Board_Comm_Reset_Rx();
 
-    if (TEST_MODE == TEST_MODE_PROGRAM_1) {
-        printf("enter waiting");
-        system_delay_ms(3000);
-        test_program_1();
+    if (TEST_MODE == TEST_MODE_TEST) {
+        printf("enter waiting");    // 进场等待已移至主循环内非阻塞门控 (见 TEST_ENTRY_WAIT_MS)
     } else if (TEST_MODE == TEST_MODE_IMU) {
         test_program_imu();
     }
+    // [修复] 原此处 system_delay_ms(3000) 会产生 >10ms 不喂心跳窗口 → 1ms ISR 看门狗
+    // 误锁存 DISARM_MAINLOOP_STALL 并停车; 且该位仅靠解析到新帧解锁, 测试模式无下传时
+    // 无复活手段 (永久锁死)。现改为主循环内非阻塞门控, 心跳全程每轮刷新。
     uint32_t last_drone_rx_time_ms = sys_time_ms;
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
@@ -141,9 +142,12 @@ int main(void)
             // 无人机下传 car_en: 0=飞机停止/锁定, 1=正常飞行。
             // 只置/清 DISARM_DRONE_STOPPED，不覆盖人工急停或通信看门狗。
             // 同一 FIFO 批次中只要曾出现 car_en=0，本轮停止优先；下一批新帧才允许恢复。
+            // [修复] 测试模式急停后锁停不恢复 (稳稳停车到底): 仅正常模式随 car_en 解锁。
             uint8_t drone_running = (!stop_event && uart_data[6] >= 0.5f);
             if (drone_running) {
-                Chassis_Unblock(DISARM_DRONE_STOPPED);
+                if (TEST_MODE == TEST_MODE_NORMAL) {
+                    Chassis_Unblock(DISARM_DRONE_STOPPED);
+                }
             } else {
                 Chassis_Block(DISARM_DRONE_STOPPED);
             }
@@ -158,13 +162,28 @@ int main(void)
             }
             last_visual_time_ms = now;
             visual_loop_count_debug++;
-            if (drone_running) {
-                Visual_Control_Loop();
+            if (TEST_MODE == TEST_MODE_NORMAL && drone_running) {
+                Visual_Control_Loop();   // [修复] 测试模式下禁止视觉控制与测试抢速度指令
             }
         } else {
             drone_timeout_debug = sys_time_ms - last_drone_rx_time_ms;
-            if (drone_timeout_debug >= 1000U) { // 超过 1000ms 没收到通讯
+            // [修复] 测试模式不依赖无人机下传 (无帧亦可台架测试): 通信超时锁车仅正常模式生效
+            if (TEST_MODE == TEST_MODE_NORMAL && drone_timeout_debug >= 1000U) { // 超过 1000ms 没收到通讯
                 Chassis_Block(DISARM_COMM_LOST); // 置通讯丢失位 → 停车清理 (幂等)
+            }
+        }
+
+        // [新增] 测试模式统一入口: 非阻塞状态机, 每轮主循环调用一次。
+        // 置于收帧分支之后, 使本轮的 DISARM_DRONE_STOPPED 状态即时生效 (急停响应不滞后一帧)。
+        // [修复] 进场等待改为主循环内非阻塞门控 (原为循环前 system_delay_ms(3000)):
+        // 心跳在循环顶刷新, 等待期不会触发 MAINLOOP_STALL 锁停; 等待期内不执行测试,
+        // 但收帧/急停/无线调参均正常处理。
+        #define TEST_ENTRY_WAIT_MS  3000U   // [新增] 测试模式进场等待时长 (主循环内非阻塞门控, 见循环内实现)
+        if (TEST_MODE != TEST_MODE_NORMAL) {
+            static uint32_t entry_wait_start_ms = 0U;   // 0=未开始
+            if (entry_wait_start_ms == 0U) entry_wait_start_ms = sys_time_ms;
+            if ((uint32_t)(sys_time_ms - entry_wait_start_ms) >= TEST_ENTRY_WAIT_MS) {
+                Test_Execute();
             }
         }
 
@@ -198,7 +217,7 @@ int main(void)
             // }
             //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
             //Current_speed_display();
-            //wireless_uart_output_motor();
+            wireless_uart_output_encoder();
             // print_imu();
             //wireless_uart_output_commu();
             // printf("%.2f," , uart_data[0]);

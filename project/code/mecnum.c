@@ -26,6 +26,13 @@ float smooth_vy = 0.0f;
 float smooth_wz = 0.0f;
 static volatile uint8_t large_turn_accel_state = 0U; // 0:关闭 1:等待新指令 2:过渡中
 
+// [新增] 开环直驱测试状态: 主循环测试写入, 1ms控制ISR读取 (float 32位原子写, M4上无竞态风险)
+static volatile float pwm_open_loop_lf = 0.0f;
+static volatile float pwm_open_loop_rf = 0.0f;
+static volatile float pwm_open_loop_lb = 0.0f;
+static volatile float pwm_open_loop_rb = 0.0f;
+static volatile uint8_t pwm_open_loop_active = 0U;
+
 // ================== 内部辅助函数 ==================
 
 /**
@@ -97,6 +104,24 @@ void Mecanum_Set_Velocity(float vx, float vy, float wz){
     target_vel.wz = wz;
 }
 
+// [新增] 测试开环直驱: 指定4路PWM占空比并激活 (仅测试模式调用)
+void Mecanum_Set_PWM_Open_Loop(float lf, float rf, float lb, float rb) {
+    pwm_open_loop_lf = lf;
+    pwm_open_loop_rf = rf;
+    pwm_open_loop_lb = lb;
+    pwm_open_loop_rb = rb;
+    pwm_open_loop_active = 1U;
+}
+
+// [新增] 关闭开环直驱并清零存储占空比 (防止陈旧占空比复活泄漏)
+void Mecanum_Set_PWM_Open_Loop_Off(void) {
+    pwm_open_loop_active = 0U;
+    pwm_open_loop_lf = 0.0f;
+    pwm_open_loop_rf = 0.0f;
+    pwm_open_loop_lb = 0.0f;
+    pwm_open_loop_rb = 0.0f;
+}
+
 void Mecanum_Set_Large_Turn_Accel_Limit(uint8_t enable) {
     large_turn_accel_state = enable ? 1U : 0U;
 }
@@ -151,13 +176,25 @@ void Mecanum_Control_Loop(void) {
     // [CR-23] 锁存式: ISR 检测到超时 → 置入 DISARM_MAINLOOP_STALL (停车清理并归零
     // target_vel/smooth_*)。ISR 绝不自动解除该位；只有主循环恢复后解析到一帧
     // 合法新包才解除 (见 main_cm4.c)，杜绝"停一下又沿旧方向跑"。
-    if (TEST_MODE == TEST_MODE_NORMAL && ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) > MAINLOOP_STALL_MS)) {
+    // [修复] 测试模式已并入主循环(每轮喂心跳)，同样受看门狗保护；仅 IMU 模式
+    // 自带独立 while(1) 不喂心跳，维持关闭。
+    if (TEST_MODE != TEST_MODE_IMU && ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) > MAINLOOP_STALL_MS)) {
         Chassis_Block(DISARM_MAINLOOP_STALL);    // 幂等; 仅置位跳变时执行一次停车清理
     }
     uint8_t armed = Chassis_Is_Armed();
 
     // ISR 级时间刹车检查 (dash 到期处理)，由 car_image.c 实现
     Visual_Brake_Check();
+
+    // [新增] 测试开环直驱: 跳过斜坡平滑/偏航串级/轮速PID, 直接输出指定PWM占空比。
+    // 仅在 armed 时生效; 未解锁(急停/断连)时落入下方 !armed 分支灭PWM, 急停安全不受影响。
+    if (armed && pwm_open_loop_active) {
+        Motor_Set_Output(MOTOR_LF_PWM, MOTOR_LF_DIR, pwm_open_loop_lf);
+        Motor_Set_Output(MOTOR_RF_PWM, MOTOR_RF_DIR, pwm_open_loop_rf);
+        Motor_Set_Output(MOTOR_LB_PWM, MOTOR_LB_DIR, pwm_open_loop_lb);
+        Motor_Set_Output(MOTOR_RB_PWM, MOTOR_RB_DIR, pwm_open_loop_rb);
+        return;
+    }
     // ==========================================================
     // 【核心一】只对“用户目标指令”进行斜坡平滑 (防起步打滑)
     // 平移速度按总加速度模长限幅，转向时不改变速度增量方向
@@ -211,8 +248,8 @@ void Mecanum_Control_Loop(void) {
         if (fabsf(smooth_wz) < 0.05f) {
             
             // --- 外环：角度控制 (只管方向) ---
-            float yaw_error = 0.0f - imu_car_data.yaw_total;
-            
+            float yaw_error = 0.0f - imu_car_data.yaw_total;   // 单位：度
+
             // 角度死区：1.5度以内放弃纠偏，防止原地鬼畜发热
             if (fabsf(yaw_error) < 1.5f) {
                 yaw_error = 0.0f;
@@ -235,28 +272,17 @@ void Mecanum_Control_Loop(void) {
     f_t = final_wz; // 记录用于调试输出
 
     // ==========================================================
-    // 【核心三】运动学逆解算 (包含重心前移与后轮抓地力补偿)
+    // 【核心三】运动学逆解算
     // ==========================================================
-    float offset_x = 0.02f; // 重心前移量 (2cm)，需根据实车微调
-    
-    // 计算以新重心为原点，前后轮的实际纵向力臂
-    float L_front = CAR_L - offset_x;
-    float L_rear  = CAR_L + offset_x;
-    
     // 使用闭环输出的 final_wz 直接计算旋转所需的差速
-    float center_v_front = final_wz * (L_front + CAR_W);
-    float center_v_rear  = final_wz * (L_rear  + CAR_W);
-    
-    // 侧向移动时，给容易打滑的后轮增加推力权重 (10%~15%)
-    float vy_front = smooth_vy;
-    float vy_rear  = smooth_vy * 1.10f; 
+    float center_v = final_wz * (CAR_L + CAR_W);
 
-    // 逆解算公式应用非对称参数
-    target_vel.v_lf = smooth_vx - vy_front + center_v_front;
-    target_vel.v_rf = smooth_vx + vy_front - center_v_front;
-    
-    target_vel.v_lb = smooth_vx + vy_rear  + center_v_rear;
-    target_vel.v_rb = smooth_vx - vy_rear  - center_v_rear;
+    // 逆解算公式
+    target_vel.v_lf = smooth_vx - smooth_vy + center_v;
+    target_vel.v_rf = smooth_vx + smooth_vy - center_v;
+
+    target_vel.v_lb = smooth_vx + smooth_vy + center_v;
+    target_vel.v_rb = smooth_vx - smooth_vy - center_v;
 
     // ==========================================================
     // 【核心四】底层轮速 PID 计算与防饱和机制
@@ -274,10 +300,10 @@ void Mecanum_Control_Loop(void) {
         motor_output.rb = PID_Calculate_Incremental(&pid_rb, err_rb, CONTROL_DT);
 
         // 简单的误差死区处理，防止静止时电机高频异响抖动
-        if (fabsf(target_vel.v_lf) < 0.01f && fabsf(err_lf) < 0.1f) motor_output.lf = 0;
-        if (fabsf(target_vel.v_rf) < 0.01f && fabsf(err_rf) < 0.1f) motor_output.rf = 0;
-        if (fabsf(target_vel.v_lb) < 0.01f && fabsf(err_lb) < 0.1f) motor_output.lb = 0;
-        if (fabsf(target_vel.v_rb) < 0.01f && fabsf(err_rb) < 0.1f) motor_output.rb = 0;
+        if (fabsf(target_vel.v_lf) < 0.01f && fabsf(err_lf) < 0.03f) motor_output.lf = 0;
+        if (fabsf(target_vel.v_rf) < 0.01f && fabsf(err_rf) < 0.03f) motor_output.rf = 0;
+        if (fabsf(target_vel.v_lb) < 0.01f && fabsf(err_lb) < 0.03f) motor_output.lb = 0;
+        if (fabsf(target_vel.v_rb) < 0.01f && fabsf(err_rb) < 0.03f) motor_output.rb = 0;
 
         // 步骤 1：PWM 等比例缩放，保证打滑或极限加速时，推力矢量不发生畸变
         PWM_Equal_Proportion_Scale(&motor_output.lf, &motor_output.rf, 
