@@ -10,10 +10,6 @@
 #define CAR_W           0.20f   // 左右轮距的一半 (Half Track Width)
 #define WHEEL_RADIUS    0.0485f   // 轮子半径
 #define PWM_MAX_M       9000.0f  // 四轮 PWM 最大占空比。理论上限10000，来自PWM_DUTY_MAX
-#define TEST_MODE_NORMAL       0
-#define TEST_MODE_TEST         1
-#define TEST_MODE_IMU          2
-#define TEST_MODE              1
 
 // 控制周期 (秒)
 #define CONTROL_DT      0.001f
@@ -41,9 +37,9 @@
 // 目标身份滤波
 #define CAR_VALID_MS            50U    // 小车坐标有效期 (ms)
 #define TARGET_VALID_MS         50U    // 目标坐标有效期 (ms)
-#define ANGLE_VALID_MS          800U   // adopted基础保质期及pending候补保质期 (ms)
-#define ADOPTED_ANGLE_MAX_VALID_MS       1500U // 同方向稳定后 adopted 最大保质期 (ms)
-#define ADOPTED_ANGLE_FULL_CONFIDENCE_MS 800U  // 达到最大保质期所需稳定时间 (约40帧@50Hz)
+#define ANGLE_VALID_MS          250U   // adopted基础保质期及pending候补保质期 (ms)
+#define ADOPTED_ANGLE_MAX_VALID_MS       50U // 同方向稳定后 adopted 最大保质期 (ms)
+#define ADOPTED_ANGLE_FULL_CONFIDENCE_MS 500U  // 达到最大保质期所需稳定时间 (约40帧@50Hz)
 #define ANGLE_MATCH_COS         0.9743f // cos(10°)，同目标角度匹配阈值
 #define ADOPTED_OVERRIDE_WINDOW_MS         150U    // [新增] adopted稳定时间低于此值时允许更近信标覆盖 (ms)
 #define ADOPTED_OVERRIDE_LARGE_TURN_COS   0.7071f  // [新增] cos(45°)，覆盖时转角超过此值才启用大转弯限速
@@ -56,7 +52,7 @@
 #endif
 
 // 盲冲 (Dash) 参数
-#define DASH_DIST_CM            50.0f   // 车-目标距离低于此值时触发盲冲 (cm)
+#define DASH_DIST_CM            0.0f   // 车-目标距离低于此值时触发盲冲 (cm)
 #define DASH_MS_MAX             700U    // 固定补偿前的计算时长上限
 #define DASH_SPEED_MIN_MPS      (TARGET_SPEED - 0.1f) // Dash接近速度下限 (m/s); 兼可靠性门下界
 #define DASH_SPEED_MAX_MPS      (TARGET_SPEED + 0.1f) // Dash接近速度上限 (m/s)

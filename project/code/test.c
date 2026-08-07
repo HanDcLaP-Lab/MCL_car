@@ -9,9 +9,9 @@
  *     不再占用独立 while(1), 因此主循环的板间解析/急停处理全程生效;
  *   - 测试不依赖无人机下传: 无帧时 DISARM_COMM_LOST 在测试模式不生效 (见 main_cm4.c),
  *     车辆可脱离无人机在台架上正常测试;
- *   - 无人机下传 car_en=0 急停时, 底盘由 1ms ISR 立即断电停车 (DISARM_DRONE_STOPPED),
- *     测试检测到未解锁即冻结; 急停后永久锁停、无需解锁逻辑 (car_en 恢复也不恢复运行,
- *     解锁仅正常模式生效);
+ *   - 无人机下传 car_en=0 时, 底盘由 1ms ISR 立即断电停车 (DISARM_DRONE_STOPPED),
+ *     测试检测到未解锁即冻结 (测试代码无任何解锁/恢复逻辑);
+ *     car_en=1 (无人机高度足够且未急停) 时底盘自动解锁, 测试从当前阶段继续;
  *   - 无线 ch8 人工急停 (DISARM_MANUAL) 仍生效: ch8=1 停车, ch8=0 恢复;
  *     旧版 test_program_1 入口强制解除该位, 新版不再强制;
  *   - 无线调参由主循环统一处理, 不再需要本文件内的重复处理函数。
@@ -20,8 +20,8 @@
 // ================== 测试参数 (可自行调整) ==================
 #define TEST_A_SPEED_MPS   0.5f    // A: 前进/后退速度 (m/s) —— 原 test_program_1 行为
 #define TEST_A_TIME_MS     3000U   // A: 单相持续时间 (ms)
-#define TEST_B_SPEED_MPS   0.7f    // B: 前进/后退速度 (m/s)
-#define TEST_B_DIST_M      3.5f    // B: 单相目标距离 (m, 编码器里程积分)
+#define TEST_B_SPEED_MPS   0.8f    // B: 前进/后退速度 (m/s)
+#define TEST_B_DIST_M      3.0f    // B: 单相目标距离 (m, 编码器里程积分)
 #define TEST_B_TIMEOUT_MS  7000U   // B: 单相超时保护 (堵轮/架空卡死检测, 0=关闭)
 // C: 开环PWM占空比 (绝对值和方向), 四电机独立赋值; 需要单独测某轮时把其余轮置 0
 #define TEST_C_PWM_LF      0.0f  // 左前
@@ -29,7 +29,7 @@
 #define TEST_C_PWM_LB      3000.0f  // 左后
 #define TEST_C_PWM_RB      0.0f  // 右后
 #define TEST_C_TIME_MS     20000U   // C: 开环持续时间 (ms), 单次运行后停止
-#define ACTIVE_TEST        TEST_SELECT_A  // 选择当前生效测试: TEST_SELECT_A / B / C
+#define ACTIVE_TEST        TEST_SELECT_B  // 选择当前生效测试: TEST_SELECT_A / B / C
 
 // ================== 测试选择与共享上下文 ==================
 // 测试选择值必须用 #define 而非 enum: 预处理器不识别枚举常量,
@@ -49,9 +49,8 @@ typedef struct {
 
 // ================== 非阻塞等待原语 ==================
 
-// 每个测试入口统一调用 Test_Entry: 未解锁(急停/ch8)返回0冻结。
-// 急停(car_en=0)后底盘锁停且不再解锁, 测试自然永久冻结; ch8 人工急停期间冻结,
-// ch8 释放后继续 (阶段计时含停止间隔, 对测试结果无实质影响)。
+// 每个测试入口统一调用 Test_Entry: 未解锁(car_en=0/ch8)返回0冻结, 不推进计时/里程。
+// car_en=1 或 ch8 释放后底盘解锁, 测试从当前阶段继续 (阶段计时含停止间隔, 无实质影响)。
 // 首次执行建立计时/里程基准: 否则 ctx 全零时 sys_time_ms 已累计数秒,
 // 首个 Test_Wait_Time 会误判到期立即翻相 (首相被跳过)。
 static uint8_t Test_Entry(Test_Ctx_t *ctx)

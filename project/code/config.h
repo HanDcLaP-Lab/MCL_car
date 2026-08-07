@@ -1,7 +1,12 @@
 #ifndef _CONFIG_H
 #define _CONFIG_H
 
-#define STRATEGY (2)
+#define STRATEGY (3)
+
+#define TEST_MODE_NORMAL       0
+#define TEST_MODE_TEST         1
+#define TEST_MODE_IMU          2
+#define TEST_MODE              0
 
 #if STRATEGY == 1
 // ================== 小车运动参数 ==================
@@ -35,7 +40,7 @@
 #define MAX_ACCEL_W             1.0f   // 旋转加速度上限 (rad/s^2)
 
 // ================== Dash 参数 ==================
-#define DASH_DURATION_COMPENSATION_MS 100  // 计算时长限幅后的有符号补偿，可正可负 (ms)
+#define DASH_DURATION_COMPENSATION_MS 250  // 计算时长限幅后的有符号补偿，可正可负 (ms)
 #define POST_DASH_HOLD_MS             0U   // 完全刹停后静止等待视觉稳定 (ms)
 #endif
 

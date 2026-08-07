@@ -142,12 +142,13 @@ int main(void)
             // 无人机下传 car_en: 0=飞机停止/锁定, 1=正常飞行。
             // 只置/清 DISARM_DRONE_STOPPED，不覆盖人工急停或通信看门狗。
             // 同一 FIFO 批次中只要曾出现 car_en=0，本轮停止优先；下一批新帧才允许恢复。
-            // [修复] 测试模式急停后锁停不恢复 (稳稳停车到底): 仅正常模式随 car_en 解锁。
+            // [修复] 测试模式与正常模式同样按 car_en 实时门控 (非粘滞): 无人机在地面/
+            // 起飞前/急停时 car_en=0 → 停车冻结; 高度足够(car_en=1) → 自动解锁。
+            // 曾改为测试模式粘滞锁停, 导致"小车先开机、无人机后起飞"时被起飞前的
+            // car_en=0 永久锁死, 测试永远无法运行。
             uint8_t drone_running = (!stop_event && uart_data[6] >= 0.5f);
             if (drone_running) {
-                if (TEST_MODE == TEST_MODE_NORMAL) {
-                    Chassis_Unblock(DISARM_DRONE_STOPPED);
-                }
+                Chassis_Unblock(DISARM_DRONE_STOPPED);
             } else {
                 Chassis_Block(DISARM_DRONE_STOPPED);
             }
@@ -178,7 +179,7 @@ int main(void)
         // [修复] 进场等待改为主循环内非阻塞门控 (原为循环前 system_delay_ms(3000)):
         // 心跳在循环顶刷新, 等待期不会触发 MAINLOOP_STALL 锁停; 等待期内不执行测试,
         // 但收帧/急停/无线调参均正常处理。
-        #define TEST_ENTRY_WAIT_MS  3000U   // [新增] 测试模式进场等待时长 (主循环内非阻塞门控, 见循环内实现)
+        #define TEST_ENTRY_WAIT_MS  15000U   // [新增] 测试模式进场等待时长 (主循环内非阻塞门控, 见循环内实现)
         if (TEST_MODE != TEST_MODE_NORMAL) {
             static uint32_t entry_wait_start_ms = 0U;   // 0=未开始
             if (entry_wait_start_ms == 0U) entry_wait_start_ms = sys_time_ms;
@@ -217,7 +218,7 @@ int main(void)
             // }
             //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
             //Current_speed_display();
-            wireless_uart_output_encoder();
+            //wireless_uart_output_encoder();
             // print_imu();
             //wireless_uart_output_commu();
             // printf("%.2f," , uart_data[0]);
