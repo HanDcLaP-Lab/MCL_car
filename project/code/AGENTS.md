@@ -35,9 +35,10 @@ TRACK_LOCK_THRESHOLD_MS = 150U // dash所需可信跟踪时间
 TRACK_STEP_MAX_MS = 20U  // 单帧置信时间增量上限
 CAR_VALID_MS = 50U         // 小车坐标保质期 (ms)
 TARGET_VALID_MS = 50U      // 目标坐标保质期 (ms)
-ANGLE_VALID_MS = 800U      // adopted基础保质期及pending候补保质期 (ms)
-ADOPTED_ANGLE_MAX_VALID_MS = 1500U // 同方向稳定后 adopted 最大保质期
-ADOPTED_ANGLE_FULL_CONFIDENCE_MS = 800U // 达到最大保质期所需稳定时间，约40帧@50Hz
+ANGLE_VALID_MS = 250U      // adopted初始(刚采纳)保质期及pending候补保质期 (ms)
+ADOPTED_ANGLE_STABLE_VALID_MS = 50U // 同方向稳定后 adopted 保质期端点 (ms)，可大于或小于ANGLE_VALID_MS
+ADOPTED_ANGLE_FULL_CONFIDENCE_MS = 500U // 达到稳定保质期端点所需稳定时间，约25帧@50Hz
+ADOPTED_ANGLE_VALID_FLOOR_MS = 20U // adopted 保质期下限，防止小于收包间隔导致可见目标帧间过期
 ANGLE_MATCH_COS = 0.9848f  // cos(10°)，同目标角度匹配阈值
 DASH_DIST_CM = 50.0f       // 车-目标距离低于此值时触发盲冲 (cm)
 DASH_MS_MAX = 700U        // 固定增加100ms前的计算时长上限
@@ -45,7 +46,7 @@ POST_DASH_HOLD_MS = 0U    // 完全刹停后的额外静止等待 (ms)
 DASH_SPEED_MIN_MPS = TARGET_SPEED - 0.1f // Dash接近速度下限, 兼可靠性门下界
 DASH_SPEED_MAX_MPS = TARGET_SPEED + 0.1f // Dash接近速度上限
 Target identity filter = car/target短时坐标槽与latest/adopted/pending方向槽共同维护目标；
-  本次可靠合成的同方向更新按物理时间累计置信度，adopted 保质期由 800ms 线性增加至 1500ms；
+  本次可靠合成的同方向更新按物理时间累计置信度，adopted 保质期由 ANGLE_VALID_MS 线性过渡到 ADOPTED_ANGLE_STABLE_VALID_MS（有符号运算，两端点大小关系不限）；
   state1/2可在两侧坐标仍处于50ms保质期时参与合成；异方向只更新pending，adopted到期后才由pending接管；
   Dash 仍只使用独立的 150ms 跟踪门槛，运行期间跳过方向置信度处理，结束复位时清零
 Dash 方向 = adopted_angle 方向向量 EMA (α=0.3, Cartesian 坐标系, 360° 环绕安全)

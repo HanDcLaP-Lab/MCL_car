@@ -105,6 +105,9 @@ static void adopted_angle_reset(void) {
 
 // 仅由本次重新合成的同方向调用。稳定时间按实际收包间隔累计，单帧最多计20ms；
 // 保质期始终从本次可信方向合成时刻起算，未产生新方向时不会延后到期时刻。
+// 刚采纳的方向给保质期 ANGLE_VALID_MS，随同方向稳定线性过渡到 ADOPTED_ANGLE_STABLE_VALID_MS
+// （该端点可大于或小于初始值）；稳定跟踪期间每帧刷新不失效，仅目标丢失(刷新停止)后
+// 按当时保质期及时停车/换向。
 static void adopted_angle_refresh(const Direction_Slot_t *candidate, uint32_t now) {
     uint32_t add_ms = track_memory_step_ms;
     if (add_ms > TRACK_STEP_MAX_MS) add_ms = TRACK_STEP_MAX_MS;
@@ -115,12 +118,18 @@ static void adopted_angle_refresh(const Direction_Slot_t *candidate, uint32_t no
         adopted_angle_stable_ms += add_ms;
     }
 
-    uint32_t valid_ms = ANGLE_VALID_MS +
-        (ADOPTED_ANGLE_MAX_VALID_MS - ANGLE_VALID_MS) * adopted_angle_stable_ms /
-        ADOPTED_ANGLE_FULL_CONFIDENCE_MS;
+    // 用有符号运算计算两端点之间的线性插值：若用无符号直接相减且端点小于初始值，
+    // 会下溢使保质期爆炸到数小时，adopted 永不失效导致无法脱离跟踪。
+    // 下限钳位到 ADOPTED_ANGLE_VALID_FLOOR_MS，防止保质期小于收包间隔时可见目标在帧间过期。
+    int32_t valid_ms = (int32_t)ANGLE_VALID_MS +
+        ((int32_t)ADOPTED_ANGLE_STABLE_VALID_MS - (int32_t)ANGLE_VALID_MS) *
+        (int32_t)adopted_angle_stable_ms / (int32_t)ADOPTED_ANGLE_FULL_CONFIDENCE_MS;
+    if (valid_ms < (int32_t)ADOPTED_ANGLE_VALID_FLOOR_MS) {
+        valid_ms = (int32_t)ADOPTED_ANGLE_VALID_FLOOR_MS;
+    }
     adopted_angle.angle = candidate->angle;
     adopted_angle.distance = candidate->distance;
-    adopted_angle.expire_ms = now + valid_ms;
+    adopted_angle.expire_ms = now + (uint32_t)valid_ms;
     adopted_angle.valid = 1;
 }
 

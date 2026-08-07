@@ -37,18 +37,22 @@
 // 目标身份滤波
 #define CAR_VALID_MS            50U    // 小车坐标有效期 (ms)
 #define TARGET_VALID_MS         50U    // 目标坐标有效期 (ms)
-#define ANGLE_VALID_MS          250U   // adopted基础保质期及pending候补保质期 (ms)
-#define ADOPTED_ANGLE_MAX_VALID_MS       50U // 同方向稳定后 adopted 最大保质期 (ms)
-#define ADOPTED_ANGLE_FULL_CONFIDENCE_MS 500U  // 达到最大保质期所需稳定时间 (约40帧@50Hz)
+#define ANGLE_VALID_MS          250U   // adopted初始(刚采纳)保质期及pending候补保质期 (ms)
+#define ADOPTED_ANGLE_STABLE_VALID_MS  50U // 同方向稳定后 adopted 保质期端点 (ms)：目标丢失后停车/换向的剩余时长
+#define ADOPTED_ANGLE_FULL_CONFIDENCE_MS 500U  // 达到稳定保质期端点所需稳定时间 (约25帧@50Hz)
+#define ADOPTED_ANGLE_VALID_FLOOR_MS   20U   // adopted 保质期下限：不小于典型收包间隔，避免可见目标在帧间过期
 #define ANGLE_MATCH_COS         0.9743f // cos(10°)，同目标角度匹配阈值
 #define ADOPTED_OVERRIDE_WINDOW_MS         150U    // [新增] adopted稳定时间低于此值时允许更近信标覆盖 (ms)
 #define ADOPTED_OVERRIDE_LARGE_TURN_COS   0.7071f  // [新增] cos(45°)，覆盖时转角超过此值才启用大转弯限速
 
-#if ADOPTED_ANGLE_MAX_VALID_MS < ANGLE_VALID_MS
-#error "ADOPTED_ANGLE_MAX_VALID_MS must be >= ANGLE_VALID_MS"
-#endif
+// 保质期由 ANGLE_VALID_MS 线性过渡到 ADOPTED_ANGLE_STABLE_VALID_MS，该端点可大于或小于初始值；
+// car_image.c 以有符号运算计算，避免无符号下溢使保质期爆炸(adopted 永不失效导致无法脱离跟踪)，
+// 下限由 ADOPTED_ANGLE_VALID_FLOOR_MS 钳位。
 #if ADOPTED_ANGLE_FULL_CONFIDENCE_MS == 0U
 #error "ADOPTED_ANGLE_FULL_CONFIDENCE_MS must be > 0"
+#endif
+#if ADOPTED_ANGLE_VALID_FLOOR_MS == 0U
+#error "ADOPTED_ANGLE_VALID_FLOOR_MS must be > 0"
 #endif
 
 // 盲冲 (Dash) 参数
