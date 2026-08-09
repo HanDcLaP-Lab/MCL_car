@@ -35,11 +35,6 @@ volatile uint8_t board_rx_stop_pending = 0;
 volatile uint32_t board_rx_cmd_mismatch_count = 0;   // [新增] 解码成功但 cmd 不匹配 (含自身应答帧回环)
 volatile uint32_t board_tx_reply_count = 0;          // [新增] 已发出的 CMD_SLAVE 应答帧数
 
-// 底层诊断埋点 (语义见 car_board_comm.h)
-volatile uint8_t  board_tx_de_high_readback = 0xFF;  // 0xFF = 尚未发送过任何应答
-volatile uint8_t  board_tx_de_low_readback  = 0xFF;
-volatile uint32_t board_tx_byte_count       = 0;
-
 #if DUPLEX_SWITCH
 // 上行载荷: 联调阶段为特征值 (seq/rx计数/探针常量), 每次构造应答前刷新; 见 Board_Comm_Send_Reply
 float car_uplink_data[BOARD_UPLINK_COUNT] = {0};
@@ -261,13 +256,6 @@ void Board_Comm_Send_Reply(void)
     car_uplink_data[0] = imu_car_data.roll;
     car_uplink_data[1] = imu_car_data.pitch;
     car_uplink_data[2] = imu_car_data.yaw;
-    // [联调用] 上行链路排查期间曾改为下列特征值, 已验证通过 (2026-08-09):
-    //   [0]=回显seq (验证seq链路)  [1]=已收帧数 (验证数据是活的)
-    //   [2]=BOARD_UPLINK_PROBE_VALUE (验证float字节序与对齐, 实测收到 123.46 正确)
-    // 若日后上行再出问题, 取消下面三行注释即可快速复现该诊断手段。
-    // car_uplink_data[0] = (float)echo_seq;
-    // car_uplink_data[1] = (float)board_rx_ok_count;
-    // car_uplink_data[2] = BOARD_UPLINK_PROBE_VALUE;
 
     reply_frame[0] = BOARD_HEADER1;
     reply_frame[1] = BOARD_HEADER2;
@@ -287,22 +275,16 @@ void Board_Comm_Send_Reply(void)
     // RS485 半双工: 拉高 DE 发送 → 等移位完成 → 拉低回接收态
     gpio_high(BOARD_RS485_DIR_PIN);
     system_delay_us(BOARD_DIR_SETUP_US);
-    // 埋点: 回读 DE 实测电平。期望 1; 若读回 0 则引脚没能真正驱动到高,
-    // 收发器停在接收态, 应答不可能上总线 (此时 tx 计数会照常涨, 极具误导性)。
-    board_tx_de_high_readback = gpio_get_level(BOARD_RS485_DIR_PIN);
 
 #if BOARD_TX_PREAMBLE_LEN > 0U
-    // 前导字节: 吸收总线浮空造成的首字节错位, 保护真正的帧头 (原理见 car_board_comm.h)
+    // 前导字节: 吸收总线换向期造成的首字节错位, 保护真正的帧头 (原理见 car_board_comm.h)
     uart_write_buffer(BOARD_UART, preamble_bytes, sizeof(preamble_bytes));
-    board_tx_byte_count += sizeof(preamble_bytes);
 #endif
 
     uart_write_buffer(BOARD_UART, reply_frame, sizeof(reply_frame));
-    board_tx_byte_count += sizeof(reply_frame);
 
     system_delay_us(BOARD_TX_HOLD_US);
     gpio_low(BOARD_RS485_DIR_PIN);
-    board_tx_de_low_readback = gpio_get_level(BOARD_RS485_DIR_PIN);   // 埋点: 期望 0
 
     board_tx_reply_count++;
 }
@@ -322,10 +304,11 @@ void Board_Comm_Send_Reply(void)
 //   dt    最近两帧成功接收的间隔 (ms)
 //   max   接收间隔最大值 (ms)
 //   fifo  当前/历史最大 FIFO 占用 (字节)
-//   --- 以下为底层诊断埋点 ---
-//   de    DE 引脚回读: 拉高后/拉低后 (期望 1/0; 255 表示还没发过应答)
-//         de 高位读回 0 → P06_2 没能真正驱动到高, 收发器停在接收态, 应答上不了总线
-//   txb   累计已提交发送的字节数 (= tx × 18)
+//
+// 注意: printf 为阻塞式 (每字节忙等 TxComplete), 本行约 45 字节 @115200 要占住主循环约 4ms。
+//   而主循环卡死看门狗 MAINLOOP_STALL_MS 只有 10ms, 一次打印即占去约四成预算,
+//   越线会锁存 DISARM_MAINLOOP_STALL 强制停车 (详见仓库根目录 TOFIX.md 的 P0-1)。
+//   故默认不调用 (见 main_cm4.c 注释掉的调用处), 仅在需要观察链路质量时临时开启。
 void Board_Comm_Print_Stats(void)
 {
     extern volatile uint32_t sys_time_ms;
@@ -335,7 +318,7 @@ void Board_Comm_Print_Stats(void)
     if ((uint32_t)(now - last_print_ms) < BOARD_PRINT_PERIOD_MS) return;
     last_print_ms = now;
 
-    printf("car,%u,%u,%u,%u,%u,%u,%u,%u,%u/%u,de%u/%u,txb%u\r\n",
+    printf("car,%u,%u,%u,%u,%u,%u,%u,%u,%u/%u\r\n",
            (unsigned)board_rx_ok_count,
            (unsigned)board_tx_reply_count,
            (unsigned)board_rx_checksum_fail_count,
@@ -345,10 +328,7 @@ void Board_Comm_Print_Stats(void)
            (unsigned)board_rx_last_dt_ms,
            (unsigned)board_rx_max_dt_ms,
            (unsigned)fifo_used(&board_rx_fifo),
-           (unsigned)board_rx_fifo_max_used,
-           (unsigned)board_tx_de_high_readback,
-           (unsigned)board_tx_de_low_readback,
-           (unsigned)board_tx_byte_count);
+           (unsigned)board_rx_fifo_max_used);
 }
 #endif
 

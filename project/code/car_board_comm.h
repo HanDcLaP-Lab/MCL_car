@@ -70,10 +70,6 @@
 // 联调期取 5000ms 以降低触发概率。详见仓库根目录 TOFIX.md。
 #define BOARD_PRINT_PERIOD_MS 5000U
 
-// [联调阶段] 上行载荷探针常量: 放在 car_uplink_data[2], 供无人机侧验证 float 字节序与对齐。
-// 取非整数且各字节不同的值, 一旦错位/字节序反了, 收到的数会明显离谱而不是"看起来差不多"。
-#define BOARD_UPLINK_PROBE_VALUE  123.456f
-
 // ================= 应答帧前导字节 =================
 // 背景: RS485 总线当前只有 120Ω 终端、无 fail-safe 偏置电阻。无人机发完请求拉低 DE 后,
 //   到小车拉高 DE 开始应答之间有约 0.5~2ms 的窗口, 此时两端都不驱动, 差分对处于浮空态。
@@ -142,13 +138,9 @@ extern volatile uint8_t board_rx_stop_pending;
 extern volatile uint32_t board_rx_cmd_mismatch_count;   // 解码成功但 cmd 不匹配 (含自身应答回环)
 extern volatile uint32_t board_tx_reply_count;          // 已发出的 CMD_SLAVE 应答帧数
 
-// ================= 底层诊断埋点 =================
-// 用途: 证明"应答确实驱动了总线", 而不只是 CPU 调了 uart_write_buffer。
-//   de_hi/de_lo = 拉高/拉低 DE 后回读到的实测电平。若 de_hi 读回 0, 说明 P06_2 没能
-//   真正驱动到高 (引脚被占用/复用错/外部下拉过强), 收发器停在接收态, 应答上不了总线。
-extern volatile uint8_t  board_tx_de_high_readback;     // 拉高 DE 后回读电平 (期望 1)
-extern volatile uint8_t  board_tx_de_low_readback;      // 拉低 DE 后回读电平 (期望 0)
-extern volatile uint32_t board_tx_byte_count;           // 累计已提交发送的字节数
+// 说明: 8.9a 调试期曾有一组诊断埋点 (DE 引脚回读实测电平、累计发送字节数), 用于证明
+//   "应答确实驱动了总线"而非只是 CPU 调了 uart_write_buffer。链路定位完成后已移除,
+//   详见 README 8.9a。若日后上行再度异常, 从 8.9a 提交取回即可。
 
 // ================= 函数声明 =================
 void Board_Comm_Init(void);               // 通讯初始化 (含 RS485 方向引脚初始化, 进入接收态)

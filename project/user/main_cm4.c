@@ -120,8 +120,9 @@ int main(void)
         // 放在主循环而非中断: RS485 的 DE 保持延时不能阻塞 1ms 控制 ISR。
         // 无待应答请求时函数内部直接返回, 不产生额外开销。
         Board_Comm_Send_Reply();
-        // 板间收发统计: 有线 printf (UART_0 @115200), 内部按 BOARD_PRINT_PERIOD_MS 限频
-        Board_Comm_Print_Stats();
+        // [调试用] 板间收发统计: 有线 printf, 内部按 BOARD_PRINT_PERIOD_MS 限频。
+        // printf 阻塞式约 4ms, 而卡死看门狗仅 10ms, 正常运行默认不开 (见 TOFIX.md P0-1)。
+        //Board_Comm_Print_Stats();
 #endif
         if(cnt > 5000){
             //.test_program_1();
