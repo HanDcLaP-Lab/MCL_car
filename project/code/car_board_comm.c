@@ -1,6 +1,19 @@
 #include "car_board_comm.h"
 #include "zf_common_headfile.h"
 
+/*********************************************************************************************************************
+ * car_board_comm.c  板间通讯 (DUPLEX_SWITCH=1 时小车为从机)
+ *
+ * DUPLEX_SWITCH = 1 (双向): 协议由原「54 字节单向帧」升级为「带 cmd/seq 的双向帧」。
+ *   - 接收: 解析无人机 CMD_MASTER 请求帧 (54 字节), 保留原有 NaN/Inf 与业务语义防御;
+ *   - 应答: 收到有效请求后置 reply_pending, 由主循环 Board_Comm_Send_Reply() 回一帧
+ *           CMD_SLAVE (20 字节, seq 回显, 载荷 = car_uplink_data)。发送放主循环而非
+ *           中断, 避免 DE 保持延时阻塞 ISR。
+ *   - FIFO 内积压多个请求时只回最新一帧应答 (与「只保留最新帧」的既有语义一致, 也避免
+ *     连续发多帧堵塞总线); 因此主循环卡顿会表现为无人机侧的一次超时统计。
+ * DUPLEX_SWITCH = 0 (单向): 维持原 54 字节协议与原接收状态机, 不发送任何数据。
+ ********************************************************************************************************************/
+
 // ================= 变量定义 =================
 // 索引映射见 car_board_comm.h 中的 extern 声明注释
 float uart_data[UART_DATA_LENGTH] = {0};
@@ -19,8 +32,39 @@ volatile uint32_t board_rx_fifo_max_used = 0;
 volatile uint32_t board_rx_fifo_corrupt_count = 0;   // [并发加固] fifo_used 越界(size被竞态写坏)被清空的次数
 volatile uint32_t board_rx_fifo_write_fail_count = 0;
 volatile uint8_t board_rx_stop_pending = 0;
+volatile uint32_t board_rx_cmd_mismatch_count = 0;   // [新增] 解码成功但 cmd 不匹配 (含自身应答帧回环)
+volatile uint32_t board_tx_reply_count = 0;          // [新增] 已发出的 CMD_SLAVE 应答帧数
+
+// 底层诊断埋点 (语义见 car_board_comm.h)
+volatile uint8_t  board_tx_de_high_readback = 0xFF;  // 0xFF = 尚未发送过任何应答
+volatile uint8_t  board_tx_de_low_readback  = 0xFF;
+volatile uint32_t board_tx_byte_count       = 0;
+
+#if DUPLEX_SWITCH
+// 上行载荷: 联调阶段为特征值 (seq/rx计数/探针常量), 每次构造应答前刷新; 见 Board_Comm_Send_Reply
+float car_uplink_data[BOARD_UPLINK_COUNT] = {0};
+
+// 应答触发标志: 解析到有效 CMD_MASTER 后置位, 由主循环统一消费并发送
+static volatile uint8_t reply_pending  = 0;   // 1 = 有一帧待发送应答
+static volatile uint8_t reply_echo_seq = 0;   // 待回显给主机的请求帧 seq
+
+static uint8_t reply_frame[BOARD_UPLINK_FRAME_SIZE];   // 应答帧发送缓冲
+#if BOARD_TX_PREAMBLE_LEN > 0U
+// 前导字节缓冲: 内容恒定, 初始化一次即可 (作用见 car_board_comm.h 的宏注释)
+static uint8_t preamble_bytes[BOARD_TX_PREAMBLE_LEN];
+static uint8_t preamble_initialized = 0;
+#endif
+#endif
 
 // 接收状态机枚举
+#if DUPLEX_SWITCH
+// 双向: 仅靠帧头 0xAA 0x55 重同步, 累满 54 字节后整帧校验 (校验含 cmd/seq)
+typedef enum {
+    STEP_HEADER1 = 0,   // 等待 0xAA
+    STEP_HEADER2,       // 等待 0x55
+    STEP_BODY           // 累积帧体至 BOARD_DOWNLINK_FRAME_SIZE
+} RxState;
+#else
 typedef enum {
     STEP_HEADER1 = 0,
     STEP_HEADER2,
@@ -28,6 +72,7 @@ typedef enum {
     STEP_CHECKSUM,
     STEP_TAIL
 } RxState;
+#endif
 
 // 定义共用体用于解析
 typedef union {
@@ -39,16 +84,32 @@ typedef union {
 static RxState state = STEP_HEADER1;
 static uint8_t data_idx = 0;
 static FloatPack temp_pack;
+#if !DUPLEX_SWITCH
+// 双向模式改为累满整帧后统一校验, 不再逐字节累加; 声明用条件编译保留而非删除
 static uint8_t cal_checksum = 0;
+#endif
 static uint32_t last_ok_time_ms = 0;
+#if DUPLEX_SWITCH
+static uint8_t rx_frame[BOARD_DOWNLINK_FRAME_SIZE];   // 下行整帧累积缓冲
+#endif
 
 // ================= 通讯初始化 =================
 void Board_Comm_Init(void)
 {
+    // RS485 方向引脚: 空闲保持接收态 (低)
     gpio_init(BOARD_RS485_DIR_PIN, GPO, GPIO_LOW, GPO_PUSH_PULL);
     fifo_init(&board_rx_fifo, FIFO_DATA_8BIT, rx_buffer, 512);
     uart_init(BOARD_UART, BOARD_BAUDRATE, BOARD_TX_PIN, BOARD_RX_PIN);
     uart_rx_interrupt(BOARD_UART, 1); 
+
+#if DUPLEX_SWITCH && (BOARD_TX_PREAMBLE_LEN > 0U)
+    if (!preamble_initialized) {
+        for (uint8_t i = 0; i < BOARD_TX_PREAMBLE_LEN; i++) {
+            preamble_bytes[i] = BOARD_TX_PREAMBLE_BYTE;
+        }
+        preamble_initialized = 1;
+    }
+#endif
 }
 
 uint8_t Board_Comm_Consume_Stop_Event(void)
@@ -65,15 +126,238 @@ void Board_Comm_Reset_Rx(void)
     fifo_clear(&board_rx_fifo);
     state = STEP_HEADER1;
     data_idx = 0;
+#if DUPLEX_SWITCH
+    // 丢弃积压旧帧时同步撤销待发应答: 对应的请求已被判为过期, 不应再回复
+    reply_pending = 0;
+#else
     cal_checksum = 0;
+#endif
     board_rx_complete_flag = 0;
     board_rx_stop_pending = 0;
 }
 
+#if DUPLEX_SWITCH
+// ================= 下传数据防御 =================
+// 对一帧已解码的下传数据做 NaN/Inf 与业务语义校验。返回 1 = 合法, 0 = 非法(拒绝整帧)。
+// 语义规则与原 54 字节协议逐条一致, 仅从状态机内联逻辑抽成独立函数。
+static uint8_t Board_Downlink_Data_Is_Valid(const float *data)
+{
+    // 剔除 NaN (f != f) 与极大异常值 (Inf 等)
+    for (int i = 0; i < UART_DATA_LENGTH; i++) {
+        float f = data[i];
+        if (f != f || f > 1e6f || f < -1e6f) {
+            return 0;
+        }
+    }
+
+    // 业务语义校验
+    float state_f = data[5];
+    float en_f    = data[6];
+    float dist_f  = data[7];
+    if (state_f < 0.0f || state_f > 3.5f)  return 0;   // 状态只能是 0,1,2,3
+    if (en_f < 0.0f || en_f > 1.5f)        return 0;   // 使能只能是 0,1
+    if (dist_f < 0.0f || dist_f > 5000.0f) return 0;   // 距离不可能小于0或大于50米(5000cm)
+
+    return 1;
+}
+
+// ================= 下行整帧处理 =================
+// 对累满的 54 字节整帧: 校验帧尾与校验和 → 命令字判别 → 数据防御 → 写入 uart_data。
+// 帧头已由状态机保证, 故校验失败必为帧尾或校验和。
+// 收到有效 CMD_MASTER 即置应答标志: 应答与数据语义无关, 即便数据被防御拒绝也要 ack,
+// 否则主机会误判超时丢包。
+static void Board_Process_Full_Frame(uint8_t debug_en)
+{
+    const uint32_t data_bytes = (uint32_t)UART_DATA_LENGTH * UART_FLOAT_BYTES;
+    extern volatile uint32_t sys_time_ms;
+    uint8_t checksum = 0;
+    uint32_t i;
+
+    // --- 帧尾 ---
+    if (rx_frame[BOARD_DATA_OFFSET + data_bytes + 1U] != BOARD_TAIL) {
+        board_rx_tail_fail_count++;
+        if (debug_en) {
+            //printf("\r\n[ERR] Tail Fail!\r\n");
+        }
+        return;
+    }
+
+    // --- 校验和 (覆盖 cmd + seq + 数据区) ---
+    checksum += rx_frame[BOARD_CMD_OFFSET];
+    checksum += rx_frame[BOARD_SEQ_OFFSET];
+    for (i = 0; i < data_bytes; i++) {
+        checksum += rx_frame[BOARD_DATA_OFFSET + i];
+    }
+    if (checksum != rx_frame[BOARD_DATA_OFFSET + data_bytes]) {
+        board_rx_checksum_fail_count++;
+        if (debug_en) {
+            //printf("\r\n[ERR] Checksum Fail!\r\n");
+        }
+        return;
+    }
+
+    // --- 命令字判别: 只认主机请求。半双工总线上自身应答帧回环会落在此分支 ---
+    if (rx_frame[BOARD_CMD_OFFSET] != BOARD_PEER_CMD) {
+        board_rx_cmd_mismatch_count++;
+        return;
+    }
+
+    // --- 协议层先 ack (与数据合法性无关) ---
+    reply_echo_seq = rx_frame[BOARD_SEQ_OFFSET];
+    reply_pending  = 1;
+
+    // --- 数据防御 ---
+    memcpy(temp_pack.byte_data, &rx_frame[BOARD_DATA_OFFSET], data_bytes);
+    if (!Board_Downlink_Data_Is_Valid(temp_pack.f_data)) {
+        board_rx_invalid_count++;   // 非法帧: 保留上一帧有效 uart_data
+        return;
+    }
+
+    for (int k = 0; k < UART_DATA_LENGTH; k++) {
+        uart_data[k] = temp_pack.f_data[k];
+    }
+
+    uint8_t parsed_running = (temp_pack.f_data[6] >= 0.5f);
+    if (!parsed_running) {
+        // 同一批次内停止优先，后续 car_en=1 不得覆盖该事件。
+        board_rx_stop_pending = 1;
+    }
+
+    uint32_t now = sys_time_ms;
+    if (last_ok_time_ms != 0) {
+        board_rx_last_dt_ms = now - last_ok_time_ms;
+        if (board_rx_last_dt_ms > board_rx_max_dt_ms) {
+            board_rx_max_dt_ms = board_rx_last_dt_ms;
+        }
+    }
+    last_ok_time_ms = now;
+    board_rx_ok_count++;
+    board_rx_complete_flag = 1;
+}
+
+// ================= 应答发送 =================
+// 主循环调用: 若有待应答请求, 刷新上行载荷并发一帧 CMD_SLAVE (seq 回显)。
+// 放在主循环而非中断: DE 保持延时 (BOARD_TX_HOLD_US) 不能阻塞 1ms 控制 ISR。
+void Board_Comm_Send_Reply(void)
+{
+    const uint32_t data_bytes = (uint32_t)BOARD_UPLINK_COUNT * UART_FLOAT_BYTES;
+    uint8_t  checksum = 0;
+    uint8_t  echo_seq;
+    uint32_t i;
+    uint32_t primask;
+
+    // 原子消费应答标志: uart1_isr 不写这两个变量, 但解析在主循环、清标志也在主循环,
+    // 关中断只为与可能的 Board_Comm_Reset_Rx 撤销动作串行化。
+    primask = interrupt_global_disable();
+    if (!reply_pending) {
+        interrupt_global_enable(primask);
+        return;
+    }
+    echo_seq      = reply_echo_seq;
+    reply_pending = 0;
+    interrupt_global_enable(primask);
+
+    // 刷新上行载荷为最新 IMU 姿态 (后续前馈控制改传小车速度相关量)。
+    car_uplink_data[0] = imu_car_data.roll;
+    car_uplink_data[1] = imu_car_data.pitch;
+    car_uplink_data[2] = imu_car_data.yaw;
+    // [联调用] 上行链路排查期间曾改为下列特征值, 已验证通过 (2026-08-09):
+    //   [0]=回显seq (验证seq链路)  [1]=已收帧数 (验证数据是活的)
+    //   [2]=BOARD_UPLINK_PROBE_VALUE (验证float字节序与对齐, 实测收到 123.46 正确)
+    // 若日后上行再出问题, 取消下面三行注释即可快速复现该诊断手段。
+    // car_uplink_data[0] = (float)echo_seq;
+    // car_uplink_data[1] = (float)board_rx_ok_count;
+    // car_uplink_data[2] = BOARD_UPLINK_PROBE_VALUE;
+
+    reply_frame[0] = BOARD_HEADER1;
+    reply_frame[1] = BOARD_HEADER2;
+    reply_frame[BOARD_CMD_OFFSET] = BOARD_SELF_CMD;
+    reply_frame[BOARD_SEQ_OFFSET] = echo_seq;
+    // 帧缓冲是 uint8_t 数组, 无 float 对齐前提, 用 memcpy 写入数据区
+    memcpy(&reply_frame[BOARD_DATA_OFFSET], car_uplink_data, data_bytes);
+
+    checksum += reply_frame[BOARD_CMD_OFFSET];
+    checksum += reply_frame[BOARD_SEQ_OFFSET];
+    for (i = 0; i < data_bytes; i++) {
+        checksum += reply_frame[BOARD_DATA_OFFSET + i];
+    }
+    reply_frame[BOARD_DATA_OFFSET + data_bytes]      = checksum;
+    reply_frame[BOARD_DATA_OFFSET + data_bytes + 1U] = BOARD_TAIL;
+
+    // RS485 半双工: 拉高 DE 发送 → 等移位完成 → 拉低回接收态
+    gpio_high(BOARD_RS485_DIR_PIN);
+    system_delay_us(BOARD_DIR_SETUP_US);
+    // 埋点: 回读 DE 实测电平。期望 1; 若读回 0 则引脚没能真正驱动到高,
+    // 收发器停在接收态, 应答不可能上总线 (此时 tx 计数会照常涨, 极具误导性)。
+    board_tx_de_high_readback = gpio_get_level(BOARD_RS485_DIR_PIN);
+
+#if BOARD_TX_PREAMBLE_LEN > 0U
+    // 前导字节: 吸收总线浮空造成的首字节错位, 保护真正的帧头 (原理见 car_board_comm.h)
+    uart_write_buffer(BOARD_UART, preamble_bytes, sizeof(preamble_bytes));
+    board_tx_byte_count += sizeof(preamble_bytes);
+#endif
+
+    uart_write_buffer(BOARD_UART, reply_frame, sizeof(reply_frame));
+    board_tx_byte_count += sizeof(reply_frame);
+
+    system_delay_us(BOARD_TX_HOLD_US);
+    gpio_low(BOARD_RS485_DIR_PIN);
+    board_tx_de_low_readback = gpio_get_level(BOARD_RS485_DIR_PIN);   // 埋点: 期望 0
+
+    board_tx_reply_count++;
+}
+
+// ================= 通讯质量打印 (有线 printf) =================
+// 由主循环调用, 内部按 BOARD_PRINT_PERIOD_MS 限频。printf 走 UART_0 @115200,
+// 与板间通讯 UART1、无线串口 UART2 均不冲突。
+//
+// 输出格式 (逗号分隔, \r\n 结尾):
+//   car   固定前缀, 便于上位机过滤
+//   rx    成功接收的下传帧数
+//   tx    已发出的应答帧数      → 正常应与 rx 同步; 明显落后说明主循环卡顿吞了应答
+//   ck    校验和失败数
+//   tail  帧尾失败数
+//   inv   语义防御拒收数 (NaN/Inf 或越界)
+//   cmd   命令字不匹配数 (含自身应答帧回环)
+//   dt    最近两帧成功接收的间隔 (ms)
+//   max   接收间隔最大值 (ms)
+//   fifo  当前/历史最大 FIFO 占用 (字节)
+//   --- 以下为底层诊断埋点 ---
+//   de    DE 引脚回读: 拉高后/拉低后 (期望 1/0; 255 表示还没发过应答)
+//         de 高位读回 0 → P06_2 没能真正驱动到高, 收发器停在接收态, 应答上不了总线
+//   txb   累计已提交发送的字节数 (= tx × 18)
+void Board_Comm_Print_Stats(void)
+{
+    extern volatile uint32_t sys_time_ms;
+    static uint32_t last_print_ms = 0;
+    uint32_t now = sys_time_ms;
+
+    if ((uint32_t)(now - last_print_ms) < BOARD_PRINT_PERIOD_MS) return;
+    last_print_ms = now;
+
+    printf("car,%u,%u,%u,%u,%u,%u,%u,%u,%u/%u,de%u/%u,txb%u\r\n",
+           (unsigned)board_rx_ok_count,
+           (unsigned)board_tx_reply_count,
+           (unsigned)board_rx_checksum_fail_count,
+           (unsigned)board_rx_tail_fail_count,
+           (unsigned)board_rx_invalid_count,
+           (unsigned)board_rx_cmd_mismatch_count,
+           (unsigned)board_rx_last_dt_ms,
+           (unsigned)board_rx_max_dt_ms,
+           (unsigned)fifo_used(&board_rx_fifo),
+           (unsigned)board_rx_fifo_max_used,
+           (unsigned)board_tx_de_high_readback,
+           (unsigned)board_tx_de_low_readback,
+           (unsigned)board_tx_byte_count);
+}
+#endif
+
 static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
 {
     extern volatile uint32_t sys_time_ms;
+#if !DUPLEX_SWITCH
     static uint32_t rx_cnt = 0; // [新增] 接收包计数器
+#endif
 
     uint8_t read_byte;
     uint32_t len;
@@ -112,6 +396,54 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
         if (len == 0) break;                     // 防呆：未读到数据立即退出，杜绝空转
         fifo_now--;
 
+#if DUPLEX_SWITCH
+        // ---------- 双向: 累满 54 字节整帧后统一校验 (校验含 cmd/seq) ----------
+        switch (state) {
+            case STEP_HEADER1:
+                if (read_byte == BOARD_HEADER1) {
+                    rx_frame[0] = read_byte;
+                    state = STEP_HEADER2;
+                }
+                break;
+
+            case STEP_HEADER2:
+                if (read_byte == BOARD_HEADER2) {
+                    rx_frame[1] = read_byte;
+                    data_idx = 2;
+                    state = STEP_BODY;
+                } else if (read_byte != BOARD_HEADER1) {
+                    // 连续 0xAA 时停在 HEADER2 等 0x55, 其余字节退回重新找帧头
+                    state = STEP_HEADER1;
+                }
+                break;
+
+            case STEP_BODY:
+                rx_frame[data_idx++] = read_byte;
+
+                // 命令字一到位就先判别: 自身 18 字节应答帧回环时, 按下行 54 字节累积会
+                // 读出 cmd=CMD_SLAVE, 此处提前丢弃并重同步, 不必等累满整帧。
+                if (data_idx == BOARD_DATA_OFFSET &&
+                    rx_frame[BOARD_CMD_OFFSET] != BOARD_PEER_CMD) {
+                    board_rx_cmd_mismatch_count++;
+                    state = STEP_HEADER1;
+                    data_idx = 0;
+                    break;
+                }
+
+                if (data_idx >= BOARD_DOWNLINK_FRAME_SIZE) {
+                    Board_Process_Full_Frame(debug_en);
+                    state = STEP_HEADER1;
+                    data_idx = 0;
+                }
+                break;
+
+            default:
+                state = STEP_HEADER1;
+                data_idx = 0;
+                break;
+        }
+#else
+        // ---------- 单向(原实现): 逐字段状态机 ----------
         switch (state) {
             case STEP_HEADER1:
                 if (read_byte == 0xAA) state = STEP_HEADER2; 
@@ -213,6 +545,7 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
                 state = STEP_HEADER1; 
                 break;
         }
+#endif
     }
 }
 

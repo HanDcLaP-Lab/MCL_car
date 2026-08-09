@@ -115,6 +115,14 @@ int main(void)
         // 此处编写需要循环执行的代码
         // 此处编写需要循环执行的代码
         Parse_Board_Uart_Data();
+#if DUPLEX_SWITCH
+        // [新增] 板间双向通讯: 紧跟解析之后回一帧 CMD_SLAVE 应答, 尽量压低往返时延。
+        // 放在主循环而非中断: RS485 的 DE 保持延时不能阻塞 1ms 控制 ISR。
+        // 无待应答请求时函数内部直接返回, 不产生额外开销。
+        Board_Comm_Send_Reply();
+        // 板间收发统计: 有线 printf (UART_0 @115200), 内部按 BOARD_PRINT_PERIOD_MS 限频
+        Board_Comm_Print_Stats();
+#endif
         if(cnt > 5000){
             //.test_program_1();
         }
