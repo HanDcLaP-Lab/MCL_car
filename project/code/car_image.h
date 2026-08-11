@@ -29,6 +29,9 @@ extern volatile uint32_t rush_cooldown_end_time;
 extern int rush_sign;
 extern float dist_out;
 
+// ================== 无人机前馈 (定义在 car_image.c) ==================
+extern uint32_t feedforward_hesitate_ms; // [新增] 新接受方向犹豫期 (ms)，由宏 FEEDFORWARD_HESITATE_MS 赋初值，可无线调参
+
 // ================== 视觉跟踪 API ==================
 /**
  * @brief 视觉控制循环，由主循环在收到无人机视觉数据包后调用

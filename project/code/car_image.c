@@ -11,6 +11,11 @@ volatile uint32_t dash_end_time = 0;        // Dash绝对结束时刻 (sys_time_
 static volatile uint32_t post_dash_hold_end_time = 0; // Dash减速与静止等待的绝对结束时刻
 volatile uint32_t rush_cooldown_end_time = 0; // 下次允许触发Dash的绝对时刻 (0表示无冷却)
 
+// ================== 无人机前馈 ==================
+uint32_t feedforward_hesitate_ms = FEEDFORWARD_HESITATE_MS; // 新方向犹豫期 (ms)，期满立即发送无人机前馈 (可无线调参)
+static uint8_t feedforward_direction_sent = 0;              // 当前方向是否已发送过前馈指令
+static float feedforward_last_deg = -1.0f;                  // 上一次实际发出的前馈角度 (deg)，-1表示从未发出
+
 // ================== 保质期槽位 (目标身份滤波) ==================
 typedef struct {
     float x;
@@ -337,6 +342,26 @@ static void adopted_angle_replace(const Direction_Slot_t *candidate, uint8_t lar
     dash_estimate_reset();
 }
 
+// ================== 无人机前馈方向指令 ==================
+// [新增] 计算并发送无人机前馈方向。
+// 下传的车/信标坐标在无人机坐标系下 (X前Y右)，无人机yaw=0即该系前向、顺时针为正；
+// adopted角 α 为小车车体系 atan2 角 (rad)，则无人机系中车→信标方向角
+// = (小车yaw - 无人机yaw) - α，归一化到 [0,360) 后经无线串口发出。
+static void feedforward_direction_send(void) {
+    float delta_deg = imu_car_data.yaw - uart_data[4];
+    float ff_deg = delta_deg - adopted_angle.angle * (180.0f / (float)M_PI);
+    ff_deg = fmodf(ff_deg, 360.0f);
+    if (ff_deg < 0.0f) ff_deg += 360.0f;
+
+    // [新增] 角度门限：与上一次实际发出的角度相差≤FEEDFORWARD_MIN_ANGLE_DELTA 不触发 (处理360°跳变)
+    float delta = fabsf(ff_deg - feedforward_last_deg);
+    if (delta > 180.0f) delta = 360.0f - delta;
+    if (feedforward_last_deg >= 0.0f && delta <= FEEDFORWARD_MIN_ANGLE_DELTA) return;
+
+    feedforward_last_deg = ff_deg;
+    wireless_uart_output_feedforward(ff_deg);
+}
+
 /**
  * @brief 更新短时坐标缓存，维护当前采纳方向和大角度候选方向
  * @param locked_state 当前视觉可见状态，仅决定本次刷新哪些坐标槽
@@ -410,6 +435,19 @@ static uint8_t target_filter_update(uint8_t locked_state) {
             adopted_angle_replace(&pending_angle, is_large_reacquire);
             adopted_ok = 1;
         }
+    }
+
+    // ③.5 [新增] 无人机前馈：新接受方向犹豫期 (feedforward_hesitate_ms, 默认150ms)
+    // 结束即认为方向已确认，在最早确认时刻立即发送一次前馈方向
+    // (无人机yaw=0为0度、顺时针为正)。方向被替换/失效后重新武装，
+    // 同方向稳定期间只发一次，不改动原有控制逻辑。
+    if (adopted_ok && adopted_angle_stable_ms >= feedforward_hesitate_ms) {
+        if (!feedforward_direction_sent) {
+            feedforward_direction_sent = 1;
+            feedforward_direction_send();
+        }
+    } else {
+        feedforward_direction_sent = 0;
     }
 
     // ④ 将身份滤波结果转换为固定模长速度方向，供State12/State3继续处理。

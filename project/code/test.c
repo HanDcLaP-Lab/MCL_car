@@ -20,7 +20,7 @@
 // ================== 测试参数 (可自行调整) ==================
 #define TEST_A_SPEED_MPS   0.5f    // A: 前进/后退速度 (m/s) —— 原 test_program_1 行为
 #define TEST_A_TIME_MS     3000U   // A: 单相持续时间 (ms)
-#define TEST_B_SPEED_MPS   0.8f    // B: 前进/后退速度 (m/s)
+#define TEST_B_SPEED_MPS   1.1f    // B: 前进/后退速度 (m/s)
 #define TEST_B_DIST_M      3.0f    // B: 单相目标距离 (m, 编码器里程积分)
 #define TEST_B_TIMEOUT_MS  7000U   // B: 单相超时保护 (堵轮/架空卡死检测, 0=关闭)
 // C: 开环PWM占空比 (绝对值和方向), 四电机独立赋值; 需要单独测某轮时把其余轮置 0

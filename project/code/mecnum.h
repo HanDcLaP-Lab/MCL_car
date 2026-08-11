@@ -42,8 +42,14 @@
 #define ADOPTED_ANGLE_FULL_CONFIDENCE_MS 500U  // 达到稳定保质期端点所需稳定时间 (约25帧@50Hz)
 #define ADOPTED_ANGLE_VALID_FLOOR_MS   20U   // adopted 保质期下限：不小于典型收包间隔，避免可见目标在帧间过期
 #define ANGLE_MATCH_COS         0.9743f // cos(10°)，同目标角度匹配阈值
-#define ADOPTED_OVERRIDE_WINDOW_MS         150U    // [新增] adopted稳定时间低于此值时允许更近信标覆盖 (ms)
+#define ADOPTED_OVERRIDE_WINDOW_MS         70U    // [新增] adopted稳定时间低于此值时允许更近信标覆盖 (ms)
 #define ADOPTED_OVERRIDE_LARGE_TURN_COS   0.7071f  // [新增] cos(45°)，覆盖时转角超过此值才启用大转弯限速
+
+// 无人机前馈
+#define FEEDFORWARD_HESITATE_MS           150U    // [新增] 新接受方向犹豫期默认值 (ms)，与 ADOPTED_OVERRIDE_WINDOW_MS 一致：
+                                                  // 犹豫期结束即方向已确认，立即发送无人机前馈方向指令
+                                                  // 运行时变量 feedforward_hesitate_ms 以本宏赋初值，可无线调参
+#define FEEDFORWARD_MIN_ANGLE_DELTA       50.0f   // [新增] 前馈触发角度门限 (deg)：与上一次已发出的角度相差≤此值不重发，防抖动重触发
 
 // 保质期由 ANGLE_VALID_MS 线性过渡到 ADOPTED_ANGLE_STABLE_VALID_MS，该端点可大于或小于初始值；
 // car_image.c 以有符号运算计算，避免无符号下溢使保质期爆炸(adopted 永不失效导致无法脱离跟踪)，

@@ -276,6 +276,9 @@ void Wireless_Update(uint8_t ch, float val) {
         case 6:
             KD = val;
             break;
+        case 7:
+            feedforward_hesitate_ms = (uint32_t)val; // [新增] 无人机前馈犹豫期 (ms)
+            break;
         case 8:
             if(val == 1){
               Chassis_Block(DISARM_MANUAL);   // 人工急停
