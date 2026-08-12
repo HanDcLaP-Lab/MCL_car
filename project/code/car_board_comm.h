@@ -6,7 +6,7 @@
 // ================= 板间通讯模式编译期开关 =================
 // DUPLEX_SWITCH: 板间通讯模式总开关 (编译期生效)
 //   1 = 双向主从请求-应答: 解析无人机 CMD_MASTER 请求帧, 回 CMD_SLAVE 应答帧 (小车=从机)
-//   0 = 回退到原单向接收 (仅解析 54 字节无 cmd/seq 的旧协议帧)
+//   0 = 回退到原单向接收 (仅解析 58 字节无 cmd/seq 的旧协议帧)
 // 注意: 本开关必须与无人机端 data_complex.h 的 DUPLEX_SWITCH 保持一致, 否则帧格式不匹配。
 #define DUPLEX_SWITCH 1
 
@@ -16,17 +16,17 @@
 #define BOARD_TX_PIN     UART1_TX_P06_1
 #define BOARD_RX_PIN     UART1_RX_P06_0
 #define BOARD_RS485_DIR_PIN P06_2 // MAX3485 RE#/DE: 低电平为仅接收, 高电平为发送
-#define UART_DATA_LENGTH 12U
+#define UART_DATA_LENGTH 13U // 下传 float 个数 ([12]=前馈接收反馈标志, 见下方索引映射)
 #define UART_FLOAT_BYTES 4U
 #define UART_PAYLOAD_BYTES (UART_DATA_LENGTH * UART_FLOAT_BYTES)
 #define TARGET_CANDIDATE_COUNT 3U
 
 // ================= 双向协议帧定义 (与无人机端 duplex_comm.h 逐字段一致) =================
 // 帧布局: 0xAA 0x55 + cmd + seq + N×float(小端) + 累加校验(cmd+seq+数据区 模256) + 0x7F
-// 下行(无人机→小车) N = UART_DATA_LENGTH   = 12, 整帧 54 字节
-// 上行(小车→无人机) N = BOARD_UPLINK_COUNT =  3, 整帧 18 字节
+// 下行(无人机→小车) N = UART_DATA_LENGTH   = 13, 整帧 58 字节
+// 上行(小车→无人机) N = BOARD_UPLINK_COUNT =  4, 整帧 22 字节
 // 两个方向帧长不同, 靠 cmd 区分; 各自状态机只按本方向的帧长累积。
-#define BOARD_UPLINK_COUNT   3U     // 上行 float 个数 (测试阶段: IMU roll/pitch/yaw)
+#define BOARD_UPLINK_COUNT   4U     // 上行 float 个数 (IMU roll/pitch/yaw + 前馈角 ff_deg)
 
 #define BOARD_HEADER1        0xAAu
 #define BOARD_HEADER2        0x55u
@@ -39,8 +39,8 @@
 
 // 按 float 个数换算整帧长度: 帧头2 + cmd1 + seq1 + 数据区 + 校验1 + 帧尾1
 #define BOARD_FRAME_SIZE(n)  (BOARD_DATA_OFFSET + (n) * UART_FLOAT_BYTES + 2U)
-#define BOARD_DOWNLINK_FRAME_SIZE  BOARD_FRAME_SIZE(UART_DATA_LENGTH)    // 54
-#define BOARD_UPLINK_FRAME_SIZE    BOARD_FRAME_SIZE(BOARD_UPLINK_COUNT)  // 18
+#define BOARD_DOWNLINK_FRAME_SIZE  BOARD_FRAME_SIZE(UART_DATA_LENGTH)    // 58
+#define BOARD_UPLINK_FRAME_SIZE    BOARD_FRAME_SIZE(BOARD_UPLINK_COUNT)  // 22
 
 #define BOARD_CMD_MASTER     0x10u  // 命令字: 主机(无人机)请求帧
 #define BOARD_CMD_SLAVE      0x20u  // 命令字: 从机(小车)应答帧
@@ -58,9 +58,10 @@
 //
 // DIR_SETUP: 拉高 DE 到开始发送之间的等待。20us → 100us 是排查上行丢包期间加大的,
 //   当时用于把应答发送推后、绕开无人机 DE 多占总线 200us 造成的重叠窗口。
-//   现无人机端 TX_HOLD 已治本(200→20), 本项可逐步退回 20us 以省掉这段等待 ——
-//   但需实测确认退回后丢包不恶化, 建议一次只改一个参数。
-#define BOARD_DIR_SETUP_US   100U
+//   现无人机端 TX_HOLD 已治本(200→20), 退回 20us (2026-08-11, 配合摄像头 100Hz:
+//   每 10ms 一个事务, 每帧省 80us 应答延迟; 实测丢包不恶化即可维持)。
+//   前导字节暂保持 8 个不退回: 100Hz 下 RS485 换向更频繁, 前导的帧同步价值更高。
+#define BOARD_DIR_SETUP_US   20U
 #define BOARD_TX_HOLD_US     20U
 
 // 调试打印周期, 由 Board_Comm_Print_Stats 内部限频。
@@ -100,7 +101,7 @@
 
 // ================= 外部变量声明 =================
 // 供其他文件调用的变量
-// uart_data[12] 索引映射 (无人机→小车下传协议):
+// uart_data[13] 索引映射 (无人机→小车下传协议):
 //   [0] car_body_pos.x      — 小车相对无人机的机体系X坐标 (cm)
 //   [1] car_body_pos.y      — 小车相对无人机的机体系Y坐标 (cm)
 //   [2] target_body_pos.x   — 目标相对无人机的机体系X坐标 (cm)
@@ -113,14 +114,16 @@
 //   [9] target2_body_pos.y  — 第二信标相对无人机的机体系Y坐标 (cm)
 //   [10] target3_body_pos.x — 第三信标相对无人机的机体系X坐标 (cm)
 //   [11] target3_body_pos.y — 第三信标相对无人机的机体系Y坐标 (cm)
+//   [12] ff_ack             — 前馈接收反馈标志 (0=无人机未收到, 1=已收到非零前馈角)
 extern float uart_data[UART_DATA_LENGTH];
 
-// car_uplink_data[3] 索引映射 (小车→无人机上传协议, 应答帧载荷):
+// car_uplink_data[4] 索引映射 (小车→无人机上传协议, 应答帧载荷):
 //   [0] imu roll  — 小车横滚角 (deg)
 //   [1] imu pitch — 小车俯仰角 (deg)
 //   [2] imu yaw   — 小车偏航角 (deg)
+//   [3] ff_deg    — 前馈方向角 (deg, 0=无前馈); 读留存值 feedforward_deg, 重传判定见 Board_Comm_Send_Reply
 // 测试阶段仅供无人机侧观察通讯质量; 后续前馈控制改传小车速度相关量。
-// 每次构造应答帧前由 Board_Comm_Send_Reply 刷新为最新 IMU 值。
+// 每次构造应答帧前由 Board_Comm_Send_Reply 刷新。
 extern float car_uplink_data[BOARD_UPLINK_COUNT];
 
 extern fifo_struct board_rx_fifo;

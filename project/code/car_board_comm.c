@@ -4,14 +4,14 @@
 /*********************************************************************************************************************
  * car_board_comm.c  板间通讯 (DUPLEX_SWITCH=1 时小车为从机)
  *
- * DUPLEX_SWITCH = 1 (双向): 协议由原「54 字节单向帧」升级为「带 cmd/seq 的双向帧」。
- *   - 接收: 解析无人机 CMD_MASTER 请求帧 (54 字节), 保留原有 NaN/Inf 与业务语义防御;
+ * DUPLEX_SWITCH = 1 (双向): 协议由原「58 字节单向帧」升级为「带 cmd/seq 的双向帧」。
+ *   - 接收: 解析无人机 CMD_MASTER 请求帧 (58 字节), 保留原有 NaN/Inf 与业务语义防御;
  *   - 应答: 收到有效请求后置 reply_pending, 由主循环 Board_Comm_Send_Reply() 回一帧
- *           CMD_SLAVE (20 字节, seq 回显, 载荷 = car_uplink_data)。发送放主循环而非
+ *           CMD_SLAVE (22 字节, seq 回显, 载荷 = car_uplink_data)。发送放主循环而非
  *           中断, 避免 DE 保持延时阻塞 ISR。
  *   - FIFO 内积压多个请求时只回最新一帧应答 (与「只保留最新帧」的既有语义一致, 也避免
  *     连续发多帧堵塞总线); 因此主循环卡顿会表现为无人机侧的一次超时统计。
- * DUPLEX_SWITCH = 0 (单向): 维持原 54 字节协议与原接收状态机, 不发送任何数据。
+ * DUPLEX_SWITCH = 0 (单向): 维持原 58 字节协议与原接收状态机, 不发送任何数据。
  ********************************************************************************************************************/
 
 // ================= 变量定义 =================
@@ -53,7 +53,7 @@ static uint8_t preamble_initialized = 0;
 
 // 接收状态机枚举
 #if DUPLEX_SWITCH
-// 双向: 仅靠帧头 0xAA 0x55 重同步, 累满 54 字节后整帧校验 (校验含 cmd/seq)
+// 双向: 仅靠帧头 0xAA 0x55 重同步, 累满 58 字节后整帧校验 (校验含 cmd/seq)
 typedef enum {
     STEP_HEADER1 = 0,   // 等待 0xAA
     STEP_HEADER2,       // 等待 0x55
@@ -134,7 +134,7 @@ void Board_Comm_Reset_Rx(void)
 #if DUPLEX_SWITCH
 // ================= 下传数据防御 =================
 // 对一帧已解码的下传数据做 NaN/Inf 与业务语义校验。返回 1 = 合法, 0 = 非法(拒绝整帧)。
-// 语义规则与原 54 字节协议逐条一致, 仅从状态机内联逻辑抽成独立函数。
+// 语义规则与原 58 字节协议逐条一致, 仅从状态机内联逻辑抽成独立函数。
 static uint8_t Board_Downlink_Data_Is_Valid(const float *data)
 {
     // 剔除 NaN (f != f) 与极大异常值 (Inf 等)
@@ -157,7 +157,7 @@ static uint8_t Board_Downlink_Data_Is_Valid(const float *data)
 }
 
 // ================= 下行整帧处理 =================
-// 对累满的 54 字节整帧: 校验帧尾与校验和 → 命令字判别 → 数据防御 → 写入 uart_data。
+// 对累满的 58 字节整帧: 校验帧尾与校验和 → 命令字判别 → 数据防御 → 写入 uart_data。
 // 帧头已由状态机保证, 故校验失败必为帧尾或校验和。
 // 收到有效 CMD_MASTER 即置应答标志: 应答与数据语义无关, 即便数据被防御拒绝也要 ack,
 // 否则主机会误判超时丢包。
@@ -256,6 +256,12 @@ void Board_Comm_Send_Reply(void)
     car_uplink_data[0] = imu_car_data.roll;
     car_uplink_data[1] = imu_car_data.pitch;
     car_uplink_data[2] = imu_car_data.yaw;
+    // [新增] 前馈方向角: feedforward_pending=1 (有未确认值) 时发送留存值, 天然含上行丢包重传
+    // (每帧重发直到确认); 无人机确认收到 (uart_data[12]≥0.5) 后复位标志并回 0 空闲。
+    // 标志在赋值处 (feedforward_direction_send) 置位, 与角度值无关, 0度方向同样可发送。
+    // 反馈标志为本帧刚解析的下传值 (解析在主循环先于本函数执行)。
+    if (uart_data[12] >= 0.5f) feedforward_pending = 0;   // 无人机确认收到 → 重置
+    car_uplink_data[3] = feedforward_pending ? feedforward_deg : 0.0f;
 
     reply_frame[0] = BOARD_HEADER1;
     reply_frame[1] = BOARD_HEADER2;
@@ -377,7 +383,7 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
         fifo_now--;
 
 #if DUPLEX_SWITCH
-        // ---------- 双向: 累满 54 字节整帧后统一校验 (校验含 cmd/seq) ----------
+        // ---------- 双向: 累满 58 字节整帧后统一校验 (校验含 cmd/seq) ----------
         switch (state) {
             case STEP_HEADER1:
                 if (read_byte == BOARD_HEADER1) {
@@ -400,7 +406,7 @@ static void Core_Parse_Board_Uart_Data(uint8_t debug_en)
             case STEP_BODY:
                 rx_frame[data_idx++] = read_byte;
 
-                // 命令字一到位就先判别: 自身 18 字节应答帧回环时, 按下行 54 字节累积会
+                // 命令字一到位就先判别: 自身 22 字节应答帧回环时, 按下行 58 字节累积会
                 // 读出 cmd=CMD_SLAVE, 此处提前丢弃并重同步, 不必等累满整帧。
                 if (data_idx == BOARD_DATA_OFFSET &&
                     rx_frame[BOARD_CMD_OFFSET] != BOARD_PEER_CMD) {

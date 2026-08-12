@@ -15,6 +15,9 @@ volatile uint32_t rush_cooldown_end_time = 0; // 下次允许触发Dash的绝对
 uint32_t feedforward_hesitate_ms = FEEDFORWARD_HESITATE_MS; // 新方向犹豫期 (ms)，期满立即发送无人机前馈 (可无线调参)
 static uint8_t feedforward_direction_sent = 0;              // 当前方向是否已发送过前馈指令
 static float feedforward_last_deg = -1.0f;                  // 上一次实际发出的前馈角度 (deg)，-1表示从未发出
+float feedforward_deg = 0.0f;    // [新增] 最近一次计算的前馈方向角 (deg, 0=无前馈); 全局留存, 应答帧 [3] 读取
+uint8_t feedforward_pending = 0; // [新增] 需要发送前馈角标志: 触发赋值时置位, 无人机确认收到后复位
+                                 // 与角度值无关, 规避"0度方向与无前馈"的歧义 (0度也可正常发送)
 
 // ================== 保质期槽位 (目标身份滤波) ==================
 typedef struct {
@@ -346,7 +349,9 @@ static void adopted_angle_replace(const Direction_Slot_t *candidate, uint8_t lar
 // [新增] 计算并发送无人机前馈方向。
 // 下传的车/信标坐标在无人机坐标系下 (X前Y右)，无人机yaw=0即该系前向、顺时针为正；
 // adopted角 α 为小车车体系 atan2 角 (rad)，则无人机系中车→信标方向角
-// = (小车yaw - 无人机yaw) - α，归一化到 [0,360) 后经无线串口发出。
+// = (小车yaw - 无人机yaw) - α，归一化到 [0,360) 后发往无人机。
+// [修改] 触发时不再直接发送, 只留存 feedforward_deg 全局值,
+// 由最近一次板间应答时机 (Board_Comm_Send_Reply) 随上行帧发往无人机。
 static void feedforward_direction_send(void) {
     float delta_deg = imu_car_data.yaw - uart_data[4];
     float ff_deg = delta_deg - adopted_angle.angle * (180.0f / (float)M_PI);
@@ -359,6 +364,9 @@ static void feedforward_direction_send(void) {
     if (feedforward_last_deg >= 0.0f && delta <= FEEDFORWARD_MIN_ANGLE_DELTA) return;
 
     feedforward_last_deg = ff_deg;
+    feedforward_deg = ff_deg;       // 留存本次计算值
+    feedforward_pending = 1;        // [新增] 赋值时置位: 该值需要发往无人机 (直到确认)
+    // 保留本地无线观测行 (PC 直连小车无线时可见)
     wireless_uart_output_feedforward(ff_deg);
 }
 
