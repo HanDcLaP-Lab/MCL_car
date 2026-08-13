@@ -348,14 +348,14 @@ static void adopted_angle_replace(const Direction_Slot_t *candidate, uint8_t lar
 
 // ================== 无人机前馈方向指令 ==================
 // [新增] 计算并发送无人机前馈方向。
-// 下传的车/信标坐标在无人机坐标系下 (X前Y右)，无人机yaw=0即该系前向、顺时针为正；
-// adopted角 α 为小车车体系 atan2 角 (rad)，则无人机系中车→信标方向角
-// = (小车yaw - 无人机yaw) - α，归一化到 [0,360) 后发往无人机。
+// adopted角 α 为小车车体系 atan2 角 (rad, 0°=车头, 顺时针正)；小车yaw为地面系航向角
+// (两设备标定时对齐)，则地面系车→信标方向角 = 小车yaw - α (本系 0°=无人机yaw=0 时的机头),
+// 归一化到 [0,360) 后发往无人机。无人机端收到后按自身当前偏航旋入机体系再叠加，
+// 故此处不再减无人机yaw。
 // [修改] 触发时不再直接发送, 只留存 feedforward_deg 全局值,
 // 由最近一次板间应答时机 (Board_Comm_Send_Reply) 随上行帧发往无人机。
 static void feedforward_direction_send(void) {
-    float delta_deg = imu_car_data.yaw - uart_data[4];
-    float ff_deg = delta_deg - adopted_angle.angle * (180.0f / (float)M_PI);
+    float ff_deg = imu_car_data.yaw - adopted_angle.angle * (180.0f / (float)M_PI);
     ff_deg = fmodf(ff_deg, 360.0f);
     if (ff_deg < 0.0f) ff_deg += 360.0f;
 

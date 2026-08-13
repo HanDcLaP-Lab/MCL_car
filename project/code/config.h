@@ -34,7 +34,7 @@
 
 #if STRATEGY == 3
 // ================== 小车运动参数 ==================
-#define TARGET_SPEED            1.1f   // 目标速度 (m/s)
+#define TARGET_SPEED            1.5f   // 目标速度 (m/s)
 #define MAX_ACCEL_LINEAR        30.0f   // 平移加速度上限 (m/s^2)
 #define LARGE_TURN_ACCEL_SCALE  0.2f   // 大角度换向时的平移加速度倍率
 #define MAX_ACCEL_W             1.0f   // 旋转加速度上限 (rad/s^2)

@@ -38,7 +38,7 @@
 #define CAR_VALID_MS            50U    // 小车坐标有效期 (ms)
 #define TARGET_VALID_MS         50U    // 目标坐标有效期 (ms)
 #define ANGLE_VALID_MS          250U   // adopted初始(刚采纳)保质期及pending候补保质期 (ms)
-#define ADOPTED_ANGLE_STABLE_VALID_MS  50U // 同方向稳定后 adopted 保质期端点 (ms)：目标丢失后停车/换向的剩余时长
+#define ADOPTED_ANGLE_STABLE_VALID_MS  100U // 同方向稳定后 adopted 保质期端点 (ms)：目标丢失后停车/换向的剩余时长
 #define ADOPTED_ANGLE_FULL_CONFIDENCE_MS 500U  // 达到稳定保质期端点所需稳定时间 (约25帧@50Hz)
 #define ADOPTED_ANGLE_VALID_FLOOR_MS   20U   // adopted 保质期下限：不小于典型收包间隔，避免可见目标在帧间过期
 #define ANGLE_MATCH_COS         0.9743f // cos(10°)，同目标角度匹配阈值
