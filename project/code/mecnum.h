@@ -50,6 +50,8 @@
                                                   // 犹豫期结束即方向已确认，立即发送无人机前馈方向指令
                                                   // 运行时变量 feedforward_hesitate_ms 以本宏赋初值，可无线调参
 #define FEEDFORWARD_MIN_ANGLE_DELTA       50.0f   // [新增] 前馈触发角度门限 (deg)：与上一次已发出的角度相差≤此值不重发，防抖动重触发
+#define FEEDFORWARD_SEND_TIMEOUT_MS       100U    // [新增] 前馈发送超时 (ms)：触发后在此时间内未获无人机确认即放弃重发，
+                                                  // 防链路异常时无限重发过期方向 (触发时刻见 feedforward_pending_ms)
 
 // 保质期由 ANGLE_VALID_MS 线性过渡到 ADOPTED_ANGLE_STABLE_VALID_MS，该端点可大于或小于初始值；
 // car_image.c 以有符号运算计算，避免无符号下溢使保质期爆炸(adopted 永不失效导致无法脱离跟踪)，

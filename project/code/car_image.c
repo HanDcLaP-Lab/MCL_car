@@ -18,6 +18,7 @@ static float feedforward_last_deg = -1.0f;                  // 上一次实际�
 float feedforward_deg = 0.0f;    // [新增] 最近一次计算的前馈方向角 (deg, 0=无前馈); 全局留存, 应答帧 [3] 读取
 uint8_t feedforward_pending = 0; // [新增] 需要发送前馈角标志: 触发赋值时置位, 无人机确认收到后复位
                                  // 与角度值无关, 规避"0度方向与无前馈"的歧义 (0度也可正常发送)
+uint32_t feedforward_pending_ms = 0; // [新增] pending 置位时刻 (sys_time_ms), 超时未确认则放弃重发
 
 // ================== 保质期槽位 (目标身份滤波) ==================
 typedef struct {
@@ -365,7 +366,8 @@ static void feedforward_direction_send(void) {
 
     feedforward_last_deg = ff_deg;
     feedforward_deg = ff_deg;       // 留存本次计算值
-    feedforward_pending = 1;        // [新增] 赋值时置位: 该值需要发往无人机 (直到确认)
+    feedforward_pending = 1;        // [新增] 赋值时置位: 该值需要发往无人机 (直到确认或超时)
+    feedforward_pending_ms = sys_time_ms; // [新增] 记录触发时刻, 超时未确认则放弃
     // 保留本地无线观测行 (PC 直连小车无线时可见)
     wireless_uart_output_feedforward(ff_deg);
 }

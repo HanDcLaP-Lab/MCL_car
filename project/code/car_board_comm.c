@@ -236,6 +236,7 @@ static void Board_Process_Full_Frame(uint8_t debug_en)
 void Board_Comm_Send_Reply(void)
 {
     const uint32_t data_bytes = (uint32_t)BOARD_UPLINK_COUNT * UART_FLOAT_BYTES;
+    extern volatile uint32_t sys_time_ms;   // 前馈发送超时判定用时基 (定义于 mecnum.c)
     uint8_t  checksum = 0;
     uint8_t  echo_seq;
     uint32_t i;
@@ -260,7 +261,14 @@ void Board_Comm_Send_Reply(void)
     // (每帧重发直到确认); 无人机确认收到 (uart_data[12]≥0.5) 后复位标志并回 0 空闲。
     // 标志在赋值处 (feedforward_direction_send) 置位, 与角度值无关, 0度方向同样可发送。
     // 反馈标志为本帧刚解析的下传值 (解析在主循环先于本函数执行)。
-    if (uart_data[12] >= 0.5f) feedforward_pending = 0;   // 无人机确认收到 → 重置
+    // [新增] 超时保护: 触发后 FEEDFORWARD_SEND_TIMEOUT_MS (100ms) 内未获确认即放弃重发,
+    // 防链路异常时无限重发过期方向 (触发时刻由 feedforward_direction_send 记录)。
+    if (uart_data[12] >= 0.5f) {
+        feedforward_pending = 0;   // 无人机确认收到 → 重置
+    } else if (feedforward_pending &&
+               (uint32_t)(sys_time_ms - feedforward_pending_ms) >= FEEDFORWARD_SEND_TIMEOUT_MS) {
+        feedforward_pending = 0;   // 超时未确认 → 放弃 (新方向触发会重新计时)
+    }
     car_uplink_data[3] = feedforward_pending ? feedforward_deg : 0.0f;
 
     reply_frame[0] = BOARD_HEADER1;
