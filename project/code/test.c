@@ -24,12 +24,12 @@
 #define TEST_B_DIST_M      3.0f    // B: 单相目标距离 (m, 编码器里程积分)
 #define TEST_B_TIMEOUT_MS  7000U   // B: 单相超时保护 (堵轮/架空卡死检测, 0=关闭)
 // C: 开环PWM占空比 (绝对值和方向), 四电机独立赋值; 需要单独测某轮时把其余轮置 0
-#define TEST_C_PWM_LF      0.0f  // 左前
-#define TEST_C_PWM_RF      3000.0f  // 右前
-#define TEST_C_PWM_LB      3000.0f  // 左后
-#define TEST_C_PWM_RB      0.0f  // 右后
-#define TEST_C_TIME_MS     20000U   // C: 开环持续时间 (ms), 单次运行后停止
-#define ACTIVE_TEST        TEST_SELECT_B  // 选择当前生效测试: TEST_SELECT_A / B / C
+#define TEST_C_PWM_LF      10000.0f  // 左前
+#define TEST_C_PWM_RF      10000.0f  // 右前
+#define TEST_C_PWM_LB      10000.0f  // 左后
+#define TEST_C_PWM_RB      10000.0f  // 右后
+#define TEST_C_TIME_MS     2000U   // C: 开环持续时间 (ms), 单次运行后停止
+#define ACTIVE_TEST        TEST_SELECT_C  // 选择当前生效测试: TEST_SELECT_A / B / C
 
 // ================== 测试选择与共享上下文 ==================
 // 测试选择值必须用 #define 而非 enum: 预处理器不识别枚举常量,
