@@ -37,7 +37,7 @@ volatile uint32_t board_tx_reply_count = 0;          // [新增] 已发出的 CM
 
 #if DUPLEX_SWITCH
 // 上行载荷: 联调阶段为特征值 (seq/rx计数/探针常量), 每次构造应答前刷新; 见 Board_Comm_Send_Reply
-float car_uplink_data[BOARD_UPLINK_COUNT] = {0};
+float car_uplink_data[BOARD_UPLINK_COUNT] = {-1.0f, 0.0f, 0.0f, -1.0f}; // [3]=-1: 无前馈, 0°为有效方向
 
 // 应答触发标志: 解析到有效 CMD_MASTER 后置位, 由主循环统一消费并发送
 static volatile uint8_t reply_pending  = 0;   // 1 = 有一帧待发送应答
@@ -258,7 +258,7 @@ void Board_Comm_Send_Reply(void)
     car_uplink_data[1] = imu_car_data.pitch;
     car_uplink_data[2] = imu_car_data.yaw;
     // [新增] 前馈方向角: feedforward_pending=1 (有未确认值) 时发送留存值, 天然含上行丢包重传
-    // (每帧重发直到确认); 无人机确认收到 (uart_data[12]≥0.5) 后复位标志并回 0 空闲。
+    // (每帧重发直到确认); 无人机确认采纳 (uart_data[12]≥0.5) 后复位标志并回 -1 空闲。
     // 标志在赋值处 (feedforward_direction_send) 置位, 与角度值无关, 0度方向同样可发送。
     // 反馈标志为本帧刚解析的下传值 (解析在主循环先于本函数执行)。
     // [新增] 超时保护: 触发后 FEEDFORWARD_SEND_TIMEOUT_MS (100ms) 内未获确认即放弃重发,
@@ -269,7 +269,7 @@ void Board_Comm_Send_Reply(void)
                (uint32_t)(sys_time_ms - feedforward_pending_ms) >= FEEDFORWARD_SEND_TIMEOUT_MS) {
         feedforward_pending = 0;   // 超时未确认 → 放弃 (新方向触发会重新计时)
     }
-    car_uplink_data[3] = feedforward_pending ? feedforward_deg : 0.0f;
+    car_uplink_data[3] = feedforward_pending ? feedforward_deg : -1.0f;
 
     reply_frame[0] = BOARD_HEADER1;
     reply_frame[1] = BOARD_HEADER2;

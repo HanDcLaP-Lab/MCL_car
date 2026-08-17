@@ -16,7 +16,7 @@
 #define BOARD_TX_PIN     UART1_TX_P06_1
 #define BOARD_RX_PIN     UART1_RX_P06_0
 #define BOARD_RS485_DIR_PIN P06_2 // MAX3485 RE#/DE: 低电平为仅接收, 高电平为发送
-#define UART_DATA_LENGTH 13U // 下传 float 个数 ([12]=前馈接收反馈标志, 见下方索引映射)
+#define UART_DATA_LENGTH 13U // 下传 float 个数 ([12]=前馈采纳反馈标志, 见下方索引映射)
 #define UART_FLOAT_BYTES 4U
 #define UART_PAYLOAD_BYTES (UART_DATA_LENGTH * UART_FLOAT_BYTES)
 #define TARGET_CANDIDATE_COUNT 3U
@@ -114,14 +114,14 @@
 //   [9] target2_body_pos.y  — 第二信标相对无人机的机体系Y坐标 (cm)
 //   [10] target3_body_pos.x — 第三信标相对无人机的机体系X坐标 (cm)
 //   [11] target3_body_pos.y — 第三信标相对无人机的机体系Y坐标 (cm)
-//   [12] ff_ack             — 前馈接收反馈标志 (0=无人机未收到, 1=已收到非零前馈角)
+//   [12] ff_ack             — 前馈采纳反馈标志 (0=无人机未采纳, 1=已采纳有效前馈角, 含0°)
 extern float uart_data[UART_DATA_LENGTH];
 
 // car_uplink_data[4] 索引映射 (小车→无人机上传协议, 应答帧载荷):
 //   [0] imu roll  — 小车横滚角 (deg)
 //   [1] imu pitch — 小车俯仰角 (deg)
 //   [2] imu yaw   — 小车偏航角 (deg)
-//   [3] ff_deg    — 前馈方向角 (deg, 0=无前馈); 读留存值 feedforward_deg, 重传判定见 Board_Comm_Send_Reply
+//   [3] ff_deg    — 前馈方向角 (deg, -1=无前馈, 0°为有效方向); 读留存值 feedforward_deg, 重传判定见 Board_Comm_Send_Reply
 // 测试阶段仅供无人机侧观察通讯质量; 后续前馈控制改传小车速度相关量。
 // 每次构造应答帧前由 Board_Comm_Send_Reply 刷新。
 extern float car_uplink_data[BOARD_UPLINK_COUNT];

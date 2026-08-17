@@ -15,9 +15,10 @@ volatile uint32_t rush_cooldown_end_time = 0; // 下次允许触发Dash的绝对
 uint32_t feedforward_hesitate_ms = FEEDFORWARD_HESITATE_MS; // 新方向犹豫期 (ms)，期满立即发送无人机前馈 (可无线调参)
 static uint8_t feedforward_direction_sent = 0;              // 当前方向是否已发送过前馈指令
 static float feedforward_last_deg = -1.0f;                  // 上一次实际发出的前馈角度 (deg)，-1表示从未发出
-float feedforward_deg = 0.0f;    // [新增] 最近一次计算的前馈方向角 (deg, 0=无前馈); 全局留存, 应答帧 [3] 读取
+float feedforward_deg = -1.0f;   // [优化] 最近一次计算的前馈方向角 (deg, -1=无前馈, 0°为有效方向); 全局留存, 应答帧 [3] 读取
 uint8_t feedforward_pending = 0; // [新增] 需要发送前馈角标志: 触发赋值时置位, 无人机确认收到后复位
-                                 // 与角度值无关, 规避"0度方向与无前馈"的歧义 (0度也可正常发送)
+                                 // 与角度值无关, 规避"0度方向与无前馈"的歧义 (0度也可正常发送);
+                                 // 上行无前馈时用 -1 表示, 0° 为有效方向
 uint32_t feedforward_pending_ms = 0; // [新增] pending 置位时刻 (sys_time_ms), 超时未确认则放弃重发
 
 // ================== 保质期槽位 (目标身份滤波) ==================
