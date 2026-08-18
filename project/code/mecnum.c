@@ -4,7 +4,7 @@
 #include <math.h>
 float f_t = 0;
 
-float KP=3500.0f, KI=20000.0f, KD=0.0f, MAX_I=4500.0f;
+float KP=3500.0f, KI=35000.0f, KD=0.0f, MAX_I=4500.0f;
 
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;//速度环pid

@@ -74,8 +74,9 @@ int main(void)
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     printf("seekfree init done");
-    wireless_uart_send_string("\r\n=== CAR SYSTEM BOOT ===\r\n");
-    wireless_uart_send_string("Calibrating IMU, keep car still...\r\n");
+    // [调试关闭] 仅保留速度打印
+    // wireless_uart_send_string("\r\n=== CAR SYSTEM BOOT ===\r\n");
+    // wireless_uart_send_string("Calibrating IMU, keep car still...\r\n");
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     pit_ms_init(PIT_CH0, 1);
@@ -90,7 +91,7 @@ int main(void)
         system_delay_ms(1);
     }
     printf("imu init done");
-    wireless_uart_send_string("IMU Calib OK! Entering test wait (3s)...\r\n");
+    // wireless_uart_send_string("IMU Calib OK! Entering test wait (3s)...\r\n");
     // 底盘解锁由 1ms ISR 在 IMU 校准完成时自动处理 (Chassis_Unblock(DISARM_UNCALIBRATED))
 
     // [CR-22] 校准结束边界: 丢弃校准期间积压的旧帧与完成标志, 只允许校准完成后到达的新帧参与控制
@@ -172,9 +173,9 @@ int main(void)
             if (elapsed < TEST_ENTRY_WAIT_MS) {
                 if ((uint32_t)(sys_time_ms - last_wait_log_ms) >= 500U) {
                     last_wait_log_ms = sys_time_ms;
-                    wireless_uart_send_string("Waiting... (");
-                    wireless_uart_send_int((int32_t)((TEST_ENTRY_WAIT_MS - elapsed) / 1000U + 1U));
-                    wireless_uart_send_string("s)\r\n");
+                    // wireless_uart_send_string("Waiting... (");
+                    // wireless_uart_send_int((int32_t)((TEST_ENTRY_WAIT_MS - elapsed) / 1000U + 1U));
+                    // wireless_uart_send_string("s)\r\n");
                 }
             } else {
                 Test_Execute();
@@ -188,16 +189,16 @@ int main(void)
             if (seekfree_assistant_parameter_update_flag[i]) {
                 seekfree_assistant_parameter_update_flag[i] = 0;
                 Wireless_Update(i + 1, seekfree_assistant_parameter[i]); 
-                wireless_uart_send_string("Param Updated\r\n");
+                // wireless_uart_send_string("Param Updated\r\n");
             }
         }
 
 /* 无线串口打印开始 (200Hz, 完全由主循环非阻塞调度, 仅在运动时输出) */
         static uint32_t last_speed_print_ms = 0U;
-        if ((uint32_t)(sys_time_ms - last_speed_print_ms) >= 5U) { // 5ms = 200Hz
+        if ((uint32_t)(sys_time_ms - last_speed_print_ms) >= 100U) { // 100ms = 10Hz
             last_speed_print_ms = sys_time_ms;
             if (Test_Is_Moving()) {
-                wireless_uart_output_actual_speed(); // 输出四轮合成的实际 (vx, vy)，单位 m/s
+                wireless_uart_output_actual_speed(); // 输出实际vx/vy (m/s)及LF/RF/LB/RB有符号PWM
             }
         }
 /* 无线串口打印结束 */

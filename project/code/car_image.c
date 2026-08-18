@@ -369,8 +369,8 @@ static void feedforward_direction_send(void) {
     feedforward_deg = ff_deg;       // 留存本次计算值
     feedforward_pending = 1;        // [新增] 赋值时置位: 该值需要发往无人机 (直到确认或超时)
     feedforward_pending_ms = sys_time_ms; // [新增] 记录触发时刻, 超时未确认则放弃
-    // 保留本地无线观测行 (PC 直连小车无线时可见)
-    wireless_uart_output_feedforward(ff_deg);
+    // [调试关闭] 仅保留速度打印；需要观测前馈方向时可临时恢复
+    // wireless_uart_output_feedforward(ff_deg);
 }
 
 /**

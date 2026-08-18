@@ -1,6 +1,6 @@
 #include "test.h"
 #include "zf_common_headfile.h"
-#include <math.h>\1
+#include <math.h>
 
 /**
  * ================== 非阻塞测试框架 ==================
@@ -18,8 +18,14 @@
  */
 
 // ================== 测试参数 (可自行调整) ==================
-#define TEST_A_SPEED_MPS   0.5f    // A: 前进速度 (m/s)
-#define TEST_A_TIME_MS     2000U   // A: 前进持续时间 (ms)，单次运行后停止
+#define TEST_A_SPEED_MPS          2.2f       // A: 四段轨迹的平移速度矢量模长 (m/s)
+#define TEST_A_RETURN_VX_MPS      (-TEST_A_SPEED_MPS * 0.8f) // A: 返回段后退分量 (m/s)
+#define TEST_A_RETURN_VY_MPS      (-TEST_A_SPEED_MPS * 0.6f) // A: 返回段右移分量 (m/s)
+#define TEST_A_FORWARD_TIME_MS    1400U      // A: 前进持续时间 (ms，原时长的0.7倍)
+#define TEST_A_LEFT_TIME_MS       1750U      // A: 左移持续时间 (ms，原时长的0.7倍)
+#define TEST_A_RIGHT_TIME_MS      700U       // A: 右移持续时间 (ms，原时长的0.7倍)
+#define TEST_A_RETURN_TIME_MS     1750U      // A: 直线返回持续时间 (ms，原时长的0.7倍)
+#define TEST_A_REPEAT_COUNT       2U         // A: 闭合轨迹重复次数
 #define TEST_B_SPEED_MPS   1.1f    // B: 前进/后退速度 (m/s)
 #define TEST_B_DIST_M      3.0f    // B: 单相目标距离 (m, 编码器里程积分)
 #define TEST_B_TIMEOUT_MS  7000U   // B: 单相超时保护 (堵轮/架空卡死检测, 0=关闭)
@@ -89,27 +95,43 @@ static uint8_t Test_Wait_Distance(Test_Ctx_t *ctx, float target_m)
     return fabsf(ctx->dist_m) >= target_m;
 }
 
-// ================== 测试A: 定速度+定时间 (单次运行) ==================
-// [新增] 前进指定速度指定时间，到期后切入停止状态并保持
+// ================== 测试A: 四段闭合轨迹 (重复两次) ==================
+// [参数调整] 前进1.4s → 左移1.75s → 右移0.7s → 直线返回原点，连续执行两轮后停止
 static void Test_Program_A(void)
 {
     static Test_Ctx_t ctx = {0};
+    static uint8_t repeat_count = 0;
     if (!Test_Entry(&ctx)) return;                    // 锁车(急停/ch8): 冻结; 首轮建立基准
     static uint8_t logged_phase = 255;
     if (logged_phase != ctx.phase) {
         logged_phase = ctx.phase;
         if (ctx.phase == 0) {
-            wireless_uart_send_string("--- TEST A START: 1.0m/s for 2s ---\r\n");
-        } else {
-            wireless_uart_send_string("--- TEST A STOPPED ---\r\n");
+            // wireless_uart_send_string("--- TEST A CYCLE START: 2.2m/s ---\r\n");
+        } else if (ctx.phase == 4) {
+            // wireless_uart_send_string("--- TEST A STOPPED ---\r\n");
         }
     }
     switch (ctx.phase) {
-        case 0: // 前进 1.0m/s 持续 2000ms
+        case 0: // 前进1.4秒
             Mecanum_Set_Velocity(TEST_A_SPEED_MPS, 0.0f, 0.0f);
-            if (Test_Wait_Time(&ctx.phase_start_ms, TEST_A_TIME_MS)) ctx.phase = 1;
+            if (Test_Wait_Time(&ctx.phase_start_ms, TEST_A_FORWARD_TIME_MS)) ctx.phase = 1;
             break;
-        case 1: // 结束: 目标归零并保持静止 (单次运行完成后不再动作)
+        case 1: // 向左1.75秒 (vy>0)
+            Mecanum_Set_Velocity(0.0f, TEST_A_SPEED_MPS, 0.0f);
+            if (Test_Wait_Time(&ctx.phase_start_ms, TEST_A_LEFT_TIME_MS)) ctx.phase = 2;
+            break;
+        case 2: // 向右0.7秒 (vy<0)
+            Mecanum_Set_Velocity(0.0f, -TEST_A_SPEED_MPS, 0.0f);
+            if (Test_Wait_Time(&ctx.phase_start_ms, TEST_A_RIGHT_TIME_MS)) ctx.phase = 3;
+            break;
+        case 3: // 沿右后方向直线返回起点 (vx=-1.76m/s, vy=-1.32m/s)
+            Mecanum_Set_Velocity(TEST_A_RETURN_VX_MPS, TEST_A_RETURN_VY_MPS, 0.0f);
+            if (Test_Wait_Time(&ctx.phase_start_ms, TEST_A_RETURN_TIME_MS)) {
+                repeat_count++;
+                ctx.phase = repeat_count < TEST_A_REPEAT_COUNT ? 0 : 4;
+            }
+            break;
+        case 4: // 两轮完成: 目标归零并保持静止
             Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
             break;
     }

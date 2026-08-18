@@ -12,9 +12,10 @@ void wireless_uart_init_(){
             system_delay_ms(100);                                               // 短延时快速闪灯表示异常
         }
     }
-    wireless_uart_send_byte('\r');
-    wireless_uart_send_byte('\n');
-    wireless_uart_send_string("SEEKFREE wireless uart demo.\r\n");              // 初始化正常 输出测试信息
+    // [调试关闭] 仅保留主循环中的实际速度打印，关闭无线串口启动提示
+    // wireless_uart_send_byte('\r');
+    // wireless_uart_send_byte('\n');
+    // wireless_uart_send_string("SEEKFREE wireless uart demo.\r\n");
 }
 
 void wireless_uart_get_(){
@@ -119,7 +120,15 @@ void wireless_uart_output_actual_speed(void){
     wireless_uart_send_float(vx_act);
     wireless_uart_send_string(",");
     wireless_uart_send_float(vy_act);
-    wireless_uart_send_string("\n");
+    wireless_uart_send_string(",");
+    wireless_uart_send_int((int32_t)motor_output.lf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_int((int32_t)motor_output.rf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_int((int32_t)motor_output.lb);
+    wireless_uart_send_string(",");
+    wireless_uart_send_int((int32_t)motor_output.rb);
+    wireless_uart_send_string("\r\n");
 }
 
 // [新增] 无人机前馈方向指令：文本行 "FFD,<angle>"，供无人机侧无线串口解析。
