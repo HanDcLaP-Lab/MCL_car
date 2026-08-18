@@ -175,9 +175,10 @@ void IMU_Car_Init(void){
 
     while(1)
     {
-         if(imu660ra_init())                                                    // 1ms 控制循环直接读取原始 acc/gyro
+         if(imu660rc_init(IMU660RC_QUARTERNION_DISABLE))                        // 关闭内部四元数，1ms 控制循环直接读取原始 acc/gyro
         {
-           printf("\r\n imu660ra init error.");                                 // imu660ra 初始化失败
+           printf("\r\n imu660rc init error.");                                 // imu660rc 初始化失败
+           system_delay_ms(50);
         }
         else
         {
@@ -187,22 +188,22 @@ void IMU_Car_Init(void){
 }
 
 void IMU_Car_Update_Loop(void){
-    imu660ra_get_acc();
-    imu660ra_get_gyro();
+    imu660rc_get_acc();
+    imu660rc_get_gyro();
 
     // 这里不再使用驱动欧拉角，避免 roll/pitch 修正耦合进 yaw。
-    if (imu660ra_acc_x == 0 && imu660ra_acc_y == 0 && imu660ra_acc_z == 0
-        && imu660ra_gyro_x == 0 && imu660ra_gyro_y == 0 && imu660ra_gyro_z == 0) {
+    if (imu660rc_acc_x == 0 && imu660rc_acc_y == 0 && imu660rc_acc_z == 0
+        && imu660rc_gyro_x == 0 && imu660rc_gyro_y == 0 && imu660rc_gyro_z == 0) {
         return;
     }
 
-    float raw_gx = imu660ra_gyro_transition(imu660ra_gyro_x);
-    float raw_gy = imu660ra_gyro_transition(imu660ra_gyro_y);
-    float raw_gz = imu660ra_gyro_transition(imu660ra_gyro_z);
+    float raw_gx = imu660rc_gyro_transition(imu660rc_gyro_x);
+    float raw_gy = imu660rc_gyro_transition(imu660rc_gyro_y);
+    float raw_gz = imu660rc_gyro_transition(imu660rc_gyro_z);
 
-    float raw_ax = imu660ra_acc_transition(imu660ra_acc_x);
-    float raw_ay = imu660ra_acc_transition(imu660ra_acc_y);
-    float raw_az = imu660ra_acc_transition(imu660ra_acc_z);
+    float raw_ax = imu660rc_acc_transition(imu660rc_acc_x);
+    float raw_ay = imu660rc_acc_transition(imu660rc_acc_y);
+    float raw_az = imu660rc_acc_transition(imu660rc_acc_z);
 
     raw_ax = Kalman_Update(&k_acc_x, raw_ax);
     raw_ay = Kalman_Update(&k_acc_y, raw_ay);

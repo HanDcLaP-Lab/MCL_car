@@ -18,8 +18,8 @@
  */
 
 // ================== 测试参数 (可自行调整) ==================
-#define TEST_A_SPEED_MPS   0.5f    // A: 前进/后退速度 (m/s) —— 原 test_program_1 行为
-#define TEST_A_TIME_MS     3000U   // A: 单相持续时间 (ms)
+#define TEST_A_SPEED_MPS   0.5f    // A: 前进速度 (m/s)
+#define TEST_A_TIME_MS     2000U   // A: 前进持续时间 (ms)，单次运行后停止
 #define TEST_B_SPEED_MPS   1.1f    // B: 前进/后退速度 (m/s)
 #define TEST_B_DIST_M      3.0f    // B: 单相目标距离 (m, 编码器里程积分)
 #define TEST_B_TIMEOUT_MS  7000U   // B: 单相超时保护 (堵轮/架空卡死检测, 0=关闭)
@@ -29,7 +29,7 @@
 #define TEST_C_PWM_LB      10000.0f  // 左后
 #define TEST_C_PWM_RB      10000.0f  // 右后
 #define TEST_C_TIME_MS     2000U   // C: 开环持续时间 (ms), 单次运行后停止
-#define ACTIVE_TEST        TEST_SELECT_C  // 选择当前生效测试: TEST_SELECT_A / B / C
+#define ACTIVE_TEST        TEST_SELECT_A  // 选择当前生效测试: TEST_SELECT_A / B / C
 
 // ================== 测试选择与共享上下文 ==================
 // 测试选择值必须用 #define 而非 enum: 预处理器不识别枚举常量,
@@ -89,20 +89,19 @@ static uint8_t Test_Wait_Distance(Test_Ctx_t *ctx, float target_m)
     return fabsf(ctx->dist_m) >= target_m;
 }
 
-// ================== 测试A: 定速度+定时间 (前后循环) ==================
-// [新增] 复刻原 test_program_1 行为 (0.8m/s 前进3s → 后退3s → 循环), 改为非阻塞状态机
+// ================== 测试A: 定速度+定时间 (单次运行) ==================
+// [新增] 前进指定速度指定时间，到期后切入停止状态并保持
 static void Test_Program_A(void)
 {
     static Test_Ctx_t ctx = {0};
     if (!Test_Entry(&ctx)) return;                    // 锁车(急停/ch8): 冻结; 首轮建立基准
     switch (ctx.phase) {
-        case 0: // 前进
-            Mecanum_Set_Velocity(0.0f, TEST_A_SPEED_MPS, 0.0f);
+        case 0: // 前进 1.0m/s 持续 2000ms
+            Mecanum_Set_Velocity(TEST_A_SPEED_MPS, 0.0f, 0.0f);
             if (Test_Wait_Time(&ctx.phase_start_ms, TEST_A_TIME_MS)) ctx.phase = 1;
             break;
-        case 1: // 后退
-            Mecanum_Set_Velocity(0.0f, -TEST_A_SPEED_MPS, 0.0f);
-            if (Test_Wait_Time(&ctx.phase_start_ms, TEST_A_TIME_MS)) ctx.phase = 0;
+        case 1: // 结束: 目标归零并保持静止 (单次运行完成后不再动作)
+            Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
             break;
     }
 }

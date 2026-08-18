@@ -188,7 +188,7 @@ int main(void)
         // [修复] 进场等待改为主循环内非阻塞门控 (原为循环前 system_delay_ms(3000)):
         // 心跳在循环顶刷新, 等待期不会触发 MAINLOOP_STALL 锁停; 等待期内不执行测试,
         // 但收帧/急停/无线调参均正常处理。
-        #define TEST_ENTRY_WAIT_MS  15000U   // [新增] 测试模式进场等待时长 (主循环内非阻塞门控, 见循环内实现)
+        #define TEST_ENTRY_WAIT_MS  3000U    // [新增] 测试模式进场等待时长 (主循环内非阻塞门控, 见循环内实现)
         if (TEST_MODE != TEST_MODE_NORMAL) {
             static uint32_t entry_wait_start_ms = 0U;   // 0=未开始
             if (entry_wait_start_ms == 0U) entry_wait_start_ms = sys_time_ms;

@@ -4,7 +4,7 @@
 #include <math.h>
 float f_t = 0;
 
-float KP=6000.0f, KI=65000.0f, KD=0.0f, MAX_I=4500.0f;
+float KP=3500.0f, KI=20000.0f, KD=0.0f, MAX_I=4500.0f;
 
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;//速度环pid
@@ -272,17 +272,28 @@ void Mecanum_Control_Loop(void) {
     f_t = final_wz; // 记录用于调试输出
 
     // ==========================================================
-    // 【核心三】运动学逆解算
+    // 【核心三】运动学逆解算 (包含重心前移与后轮抓地力补偿)
     // ==========================================================
+    float offset_x = 0.02f; // 重心前移量 (2cm)，需根据实车微调
+    
+    // 计算以新重心为原点，前后轮的实际纵向力臂
+    float L_front = CAR_L - offset_x;
+    float L_rear  = CAR_L + offset_x;
+    
     // 使用闭环输出的 final_wz 直接计算旋转所需的差速
-    float center_v = final_wz * (CAR_L + CAR_W);
+    float center_v_front = final_wz * (L_front + CAR_W);
+    float center_v_rear  = final_wz * (L_rear  + CAR_W);
+    
+    // 侧向移动时，给容易打滑的后轮增加推力权重 (10%~15%)
+    float vy_front = smooth_vy;
+    float vy_rear  = smooth_vy * 1.10f; 
 
-    // 逆解算公式
-    target_vel.v_lf = smooth_vx - smooth_vy + center_v;
-    target_vel.v_rf = smooth_vx + smooth_vy - center_v;
-
-    target_vel.v_lb = smooth_vx + smooth_vy + center_v;
-    target_vel.v_rb = smooth_vx - smooth_vy - center_v;
+    // 逆解算公式应用非对称参数
+    target_vel.v_lf = smooth_vx - vy_front + center_v_front;
+    target_vel.v_rf = smooth_vx + vy_front - center_v_front;
+    
+    target_vel.v_lb = smooth_vx + vy_rear  + center_v_rear;
+    target_vel.v_rb = smooth_vx - vy_rear  - center_v_rear;
 
     // ==========================================================
     // 【核心四】底层轮速 PID 计算与防饱和机制

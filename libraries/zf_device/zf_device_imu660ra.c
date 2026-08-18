@@ -246,8 +246,8 @@ uint8 imu660ra_init (void)
             break;
         }
         imu660ra_write_register(IMU660RA_PWR_CTRL, 0x0E);                       // 开启性能模式  使能陀螺仪、加速度、温度传感器
-        imu660ra_write_register(IMU660RA_ACC_CONF, 0xAB);                       // ACC ODR 800Hz
-        imu660ra_write_register(IMU660RA_GYR_CONF, 0xAB);                       // Gyro ODR 800Hz
+        imu660ra_write_register(IMU660RA_ACC_CONF, 0xA7);                       // 加速度采集配置 性能模式 正常采集 50Hz  采样频率
+        imu660ra_write_register(IMU660RA_GYR_CONF, 0xA9);                       // 陀螺仪采集配置 性能模式 正常采集 200Hz 采样频率
 
         // IMU660RA_ACC_SAMPLE寄存器          以下为25℃的转换比例 IMU660RA的加速度温漂系数为 0.004%/K  常值零偏的温度敏感系数为 ±0.25mg/K
         // 设置为:0x00 加速度计量程为:±2g          获取到的加速度计数据 除以16384      可以转化为带物理单位的数据，单位：g(m/s^2)

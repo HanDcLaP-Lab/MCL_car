@@ -5,21 +5,21 @@
 
 // ================= 坐标系映射宏定义 =================
 // 目标: 车体坐标系 (X前, Y右, Z下) - 符合右手定则
-// 现在的传感器安装: X向下, Y向左, Z向前
+// 现在的传感器安装: X向右, Y向后, Z向下
 
 // 陀螺仪映射 (机体角速度)
-// 车体X(前) = 传感器Z
-#define IMU_MAP_GX(x, y, z)  (z)
-// 车体Y(右) = -传感器Y
-#define IMU_MAP_GY(x, y, z)  (-y)
-// 车体Z(下) = 传感器X
-#define IMU_MAP_GZ(x, y, z)  (x)
+// 车体X(前) = 传感器-Y(因为Y向后)
+#define IMU_MAP_GX(x, y, z)  (-y)
+// 车体Y(右) = 传感器X(因为X向右)
+#define IMU_MAP_GY(x, y, z)  (x)
+// 车体Z(下) = 传感器Z(因为Z向下)
+#define IMU_MAP_GZ(x, y, z)  (z)
 
 // 加速度计映射 (映射到重力向量方向，即 -1 * 机体加速度)
-// 保持与陀螺仪相同的物理轴映射，向下轴取反以适配Mahony算法需要的+1g特征
-#define IMU_MAP_AX(x, y, z)  (z)
-#define IMU_MAP_AY(x, y, z)  (-y)
-#define IMU_MAP_AZ(x, y, z)  (-x)
+// 保持与陀螺仪相同的物理XY映射，Z轴保留取反(适配Mahony算法需要的+1g特征)
+#define IMU_MAP_AX(x, y, z)  (-y)
+#define IMU_MAP_AY(x, y, z)  (x)
+#define IMU_MAP_AZ(x, y, z)  (-z)
 
 #ifndef PI
 #define PI 3.1415926535f
