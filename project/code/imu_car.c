@@ -157,6 +157,8 @@ static void IMU_Car_Mahony_Update(float gx, float gy, float gz, float ax, float 
     }
 }
 
+static uint8_t imu_type_is_660ra = 0; // 0: 660RC, 1: 660RA
+
 void IMU_Car_Init(void){
     sum_gx = 0.0;
     sum_gy = 0.0;
@@ -173,37 +175,61 @@ void IMU_Car_Init(void){
     IMU_Car_Reset_Attitude_State();
     IMU_Car_Init_Filters();
 
-    while(1)
+    uint8_t retry = 0;
+    while(retry++ < 10)
     {
-         if(imu660rc_init(IMU660RC_QUARTERNION_DISABLE))                        // 关闭内部四元数，1ms 控制循环直接读取原始 acc/gyro
+        if(imu660rc_init(IMU660RC_QUARTERNION_DISABLE) == 0)                    // 优先尝试 660RC
         {
-           printf("\r\n imu660rc init error.");                                 // imu660rc 初始化失败
-           system_delay_ms(50);
+            imu_type_is_660ra = 0;
+            printf("\r\n imu660rc init ok.");
+            break;
+        }
+        else if(imu660ra_init() == 0)                                           // 备选尝试 660RA
+        {
+            imu_type_is_660ra = 1;
+            printf("\r\n imu660ra init ok.");
+            break;
         }
         else
         {
-           break;
+            printf("\r\n imu init retry %d...", retry);
+            system_delay_ms(20);
         }
     }
 }
 
 void IMU_Car_Update_Loop(void){
-    imu660rc_get_acc();
-    imu660rc_get_gyro();
+    float raw_gx, raw_gy, raw_gz, raw_ax, raw_ay, raw_az;
 
-    // 这里不再使用驱动欧拉角，避免 roll/pitch 修正耦合进 yaw。
-    if (imu660rc_acc_x == 0 && imu660rc_acc_y == 0 && imu660rc_acc_z == 0
-        && imu660rc_gyro_x == 0 && imu660rc_gyro_y == 0 && imu660rc_gyro_z == 0) {
-        return;
+    if (imu_type_is_660ra) {
+        imu660ra_get_acc();
+        imu660ra_get_gyro();
+        if (imu660ra_acc_x == 0 && imu660ra_acc_y == 0 && imu660ra_acc_z == 0
+            && imu660ra_gyro_x == 0 && imu660ra_gyro_y == 0 && imu660ra_gyro_z == 0) {
+            if (++calib_discard_cnt > 3000) imu_car_data.is_calibrated = 1; // 超时强行放行，防死锁
+            return;
+        }
+        raw_gx = imu660ra_gyro_transition(imu660ra_gyro_x);
+        raw_gy = imu660ra_gyro_transition(imu660ra_gyro_y);
+        raw_gz = imu660ra_gyro_transition(imu660ra_gyro_z);
+        raw_ax = imu660ra_acc_transition(imu660ra_acc_x);
+        raw_ay = imu660ra_acc_transition(imu660ra_acc_y);
+        raw_az = imu660ra_acc_transition(imu660ra_acc_z);
+    } else {
+        imu660rc_get_acc();
+        imu660rc_get_gyro();
+        if (imu660rc_acc_x == 0 && imu660rc_acc_y == 0 && imu660rc_acc_z == 0
+            && imu660rc_gyro_x == 0 && imu660rc_gyro_y == 0 && imu660rc_gyro_z == 0) {
+            if (++calib_discard_cnt > 3000) imu_car_data.is_calibrated = 1; // 超时强行放行，防死锁
+            return;
+        }
+        raw_gx = imu660rc_gyro_transition(imu660rc_gyro_x);
+        raw_gy = imu660rc_gyro_transition(imu660rc_gyro_y);
+        raw_gz = imu660rc_gyro_transition(imu660rc_gyro_z);
+        raw_ax = imu660rc_acc_transition(imu660rc_acc_x);
+        raw_ay = imu660rc_acc_transition(imu660rc_acc_y);
+        raw_az = imu660rc_acc_transition(imu660rc_acc_z);
     }
-
-    float raw_gx = imu660rc_gyro_transition(imu660rc_gyro_x);
-    float raw_gy = imu660rc_gyro_transition(imu660rc_gyro_y);
-    float raw_gz = imu660rc_gyro_transition(imu660rc_gyro_z);
-
-    float raw_ax = imu660rc_acc_transition(imu660rc_acc_x);
-    float raw_ay = imu660rc_acc_transition(imu660rc_acc_y);
-    float raw_az = imu660rc_acc_transition(imu660rc_acc_z);
 
     raw_ax = Kalman_Update(&k_acc_x, raw_ax);
     raw_ay = Kalman_Update(&k_acc_y, raw_ay);

@@ -112,6 +112,16 @@ void wireless_uart_output_encoder(void){
     wireless_uart_send_string("\n");
 }
 
+void wireless_uart_output_actual_speed(void){
+    float vx_act = (encoder_data.lf + encoder_data.rf + encoder_data.lb + encoder_data.rb) * 0.25f;
+    float vy_act = (-encoder_data.lf + encoder_data.rf + encoder_data.lb - encoder_data.rb) * 0.25f;
+
+    wireless_uart_send_float(vx_act);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(vy_act);
+    wireless_uart_send_string("\n");
+}
+
 // [新增] 无人机前馈方向指令：文本行 "FFD,<angle>"，供无人机侧无线串口解析。
 // 角度以无人机yaw=0为0度、顺时针为正，已归一化到 [0,360)。
 void wireless_uart_output_feedforward(float angle_deg) {

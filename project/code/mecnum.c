@@ -178,8 +178,8 @@ void Mecanum_Control_Loop(void) {
     // 合法新包才解除 (见 main_cm4.c)，杜绝"停一下又沿旧方向跑"。
     // [修复] 测试模式已并入主循环(每轮喂心跳)，同样受看门狗保护；仅 IMU 模式
     // 自带独立 while(1) 不喂心跳，维持关闭。
-    if (TEST_MODE != TEST_MODE_IMU && ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) > MAINLOOP_STALL_MS)) {
-        Chassis_Block(DISARM_MAINLOOP_STALL);    // 幂等; 仅置位跳变时执行一次停车清理
+    if (TEST_MODE == TEST_MODE_NORMAL && ((uint32_t)(sys_time_ms - main_loop_heartbeat_ms) > MAINLOOP_STALL_MS)) {
+        Chassis_Block(DISARM_MAINLOOP_STALL);    // 仅在正常模式下由ISR锁存该位 (需无人机新帧解锁)
     }
     uint8_t armed = Chassis_Is_Armed();
 

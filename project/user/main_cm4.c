@@ -74,7 +74,8 @@ int main(void)
     wireless_uart_init_();
     seekfree_assistant_interface_init(SEEKFREE_ASSISTANT_WIRELESS_UART);
     printf("seekfree init done");
-    pit_ms_init(PIT_CH1, 200);
+    wireless_uart_send_string("\r\n=== CAR SYSTEM BOOT ===\r\n");
+    wireless_uart_send_string("Calibrating IMU, keep car still...\r\n");
     
     Mecanum_Set_Velocity(0.0f, 0.0f, 0.0f);
     pit_ms_init(PIT_CH0, 1);
@@ -89,6 +90,7 @@ int main(void)
         system_delay_ms(1);
     }
     printf("imu init done");
+    wireless_uart_send_string("IMU Calib OK! Entering test wait (3s)...\r\n");
     // 底盘解锁由 1ms ISR 在 IMU 校准完成时自动处理 (Chassis_Unblock(DISARM_UNCALIBRATED))
 
     // [CR-22] 校准结束边界: 丢弃校准期间积压的旧帧与完成标志, 只允许校准完成后到达的新帧参与控制
@@ -99,62 +101,38 @@ int main(void)
     } else if (TEST_MODE == TEST_MODE_IMU) {
         test_program_imu();
     }
-    // [修复] 原此处 system_delay_ms(3000) 会产生 >10ms 不喂心跳窗口 → 1ms ISR 看门狗
-    // 误锁存 DISARM_MAINLOOP_STALL 并停车; 且该位仅靠解析到新帧解锁, 测试模式无下传时
-    // 无复活手段 (永久锁死)。现改为主循环内非阻塞门控, 心跳全程每轮刷新。
     uint32_t last_drone_rx_time_ms = sys_time_ms;
     // 此处编写用户代码 例如外设初始化代码等
     for(;;)
     {
         // 主循环存活心跳：每轮无条件刷新。1ms ISR 若发现超过 MAINLOOP_STALL_MS 未刷新，
-        // 判定主循环卡死并强制切断动力。务必放在循环最前、任何可能长时间阻塞的调用之前，
-        // 这样"卡在 Parse/解析里出不来"就一定会被 ISR 看门狗捕获。
+        // 判定主循环卡死并强制切断动力。
         main_loop_heartbeat_ms = sys_time_ms;
 
-        // 此处编写需要循环执行的代码
-        // 此处编写需要循环执行的代码
+        // 测试模式下主动解除无需无人机参与的锁存看门狗
+        if (TEST_MODE != TEST_MODE_NORMAL) {
+            Chassis_Unblock(DISARM_MAINLOOP_STALL);
+            Chassis_Unblock(DISARM_COMM_LOST);
+            Chassis_Unblock(DISARM_DRONE_STOPPED);
+        }
+
         // 此处编写需要循环执行的代码
         Parse_Board_Uart_Data();
 #if DUPLEX_SWITCH
-        // [新增] 板间双向通讯: 紧跟解析之后回一帧 CMD_SLAVE 应答, 尽量压低往返时延。
-        // 放在主循环而非中断: RS485 的 DE 保持延时不能阻塞 1ms 控制 ISR。
-        // 无待应答请求时函数内部直接返回, 不产生额外开销。
         Board_Comm_Send_Reply();
-        // [调试用] 板间收发统计: 有线 printf, 内部按 BOARD_PRINT_PERIOD_MS 限频。
-        // printf 阻塞式约 4ms, 而卡死看门狗仅 10ms, 正常运行默认不开 (见 TOFIX.md P0-1)。
-        //Board_Comm_Print_Stats();
 #endif
-        if(cnt > 5000){
-            //.test_program_1();
-        }
-        
 
         if (board_rx_complete_flag) {
             board_rx_complete_flag = 0;
             board_rx_ok_debug++;
 
-            // 收到无人机数据：仅清除通讯丢失这一位。若人工急停(DISARM_MANUAL)仍置位，
-            // 小车保持停车，不会因重连被自动唤醒。
             Chassis_Unblock(DISARM_COMM_LOST);
-
-            // [CR-23] 主循环卡死恢复握手: DISARM_MAINLOOP_STALL 由 1ms ISR 锁存, ISR 绝不自动解除;
-            // 仅当主循环恢复后解析到合法帧才解除 (解析时刻判定)。注意: 阻塞后首批解析的
-            // 可能是 FIFO 积压的旧帧, 其数据年龄 ≤ 阻塞时长 (通常 10~50ms, 属正常帧间延迟量级);
-            // 若发送端恰在阻塞期停止, 残余风险由下方通信看门狗 (1000ms) 与控制层目标过期兜底。
             Chassis_Unblock(DISARM_MAINLOOP_STALL);
 
             last_drone_rx_time_ms = sys_time_ms;
             drone_timeout_debug = 0;
 
             uint8_t stop_event = Board_Comm_Consume_Stop_Event();
-
-            // 无人机下传 car_en: 0=飞机停止/锁定, 1=正常飞行。
-            // 只置/清 DISARM_DRONE_STOPPED，不覆盖人工急停或通信看门狗。
-            // 同一 FIFO 批次中只要曾出现 car_en=0，本轮停止优先；下一批新帧才允许恢复。
-            // [修复] 测试模式与正常模式同样按 car_en 实时门控 (非粘滞): 无人机在地面/
-            // 起飞前/急停时 car_en=0 → 停车冻结; 高度足够(car_en=1) → 自动解锁。
-            // 曾改为测试模式粘滞锁停, 导致"小车先开机、无人机后起飞"时被起飞前的
-            // car_en=0 永久锁死, 测试永远无法运行。
             uint8_t drone_running = (!stop_event && uart_data[6] >= 0.5f);
             if (drone_running) {
                 Chassis_Unblock(DISARM_DRONE_STOPPED);
@@ -184,15 +162,21 @@ int main(void)
         }
 
         // [新增] 测试模式统一入口: 非阻塞状态机, 每轮主循环调用一次。
-        // 置于收帧分支之后, 使本轮的 DISARM_DRONE_STOPPED 状态即时生效 (急停响应不滞后一帧)。
-        // [修复] 进场等待改为主循环内非阻塞门控 (原为循环前 system_delay_ms(3000)):
-        // 心跳在循环顶刷新, 等待期不会触发 MAINLOOP_STALL 锁停; 等待期内不执行测试,
-        // 但收帧/急停/无线调参均正常处理。
-        #define TEST_ENTRY_WAIT_MS  3000U    // [新增] 测试模式进场等待时长 (主循环内非阻塞门控, 见循环内实现)
+        #define TEST_ENTRY_WAIT_MS  3000U    // [新增] 测试模式进场等待时长
         if (TEST_MODE != TEST_MODE_NORMAL) {
             static uint32_t entry_wait_start_ms = 0U;   // 0=未开始
+            static uint32_t last_wait_log_ms = 0U;
             if (entry_wait_start_ms == 0U) entry_wait_start_ms = sys_time_ms;
-            if ((uint32_t)(sys_time_ms - entry_wait_start_ms) >= TEST_ENTRY_WAIT_MS) {
+            
+            uint32_t elapsed = (uint32_t)(sys_time_ms - entry_wait_start_ms);
+            if (elapsed < TEST_ENTRY_WAIT_MS) {
+                if ((uint32_t)(sys_time_ms - last_wait_log_ms) >= 500U) {
+                    last_wait_log_ms = sys_time_ms;
+                    wireless_uart_send_string("Waiting... (");
+                    wireless_uart_send_int((int32_t)((TEST_ENTRY_WAIT_MS - elapsed) / 1000U + 1U));
+                    wireless_uart_send_string("s)\r\n");
+                }
+            } else {
                 Test_Execute();
             }
         }
@@ -201,45 +185,20 @@ int main(void)
 
         // 2. 检查是否有参数更新 (遍历所有通道)——无线调参
         for (int i = 0; i < SEEKFREE_ASSISTANT_SET_PARAMETR_COUNT; i++) {
-            // 如果第 i 个通道有数据更新标志
             if (seekfree_assistant_parameter_update_flag[i]) {
-                // 清除标志位
                 seekfree_assistant_parameter_update_flag[i] = 0;
-                
-                // 将参数应用到 PID (通道号 = 索引 + 1)
-                // seekfree_assistant_parameter[i] 是接收到的浮点数值
                 Wireless_Update(i + 1, seekfree_assistant_parameter[i]); 
-                
-                // 可选：通过无线串口回传确认，告诉上位机收到并更新了
                 wireless_uart_send_string("Param Updated\r\n");
             }
         }
 
-/* 无线串口打印开始 */
-        if (board_comm_debug_pending) {
-            board_comm_debug_pending = 0;
-            static uint8_t comm_debug_div = 0;
-
-            //wireless_uart_output_coast();
-            // if (++comm_debug_div >= 8) {
-            //     comm_debug_div = 0;
-            //     wireless_uart_output_comm_debug();
-            // }
-            //printf("%.2f,%.2f,%.2f,%.2f,%.2f,\n", imu_car_data.yaw,motor_output.lf,motor_output.rf,motor_output.lb,motor_output.rb);
-            //Current_speed_display();
-            //wireless_uart_output_encoder();
-            // print_imu();
-            //wireless_uart_output_commu();
-            // printf("%.2f," , uart_data[0]);
-            // printf("%.2f," , uart_data[1]);
-            // printf("%.2f," , uart_data[2]);
-            // printf("%.2f," , uart_data[6]);
-            // printf("%.2f\n" , uart_data[3]);
-            // wireless_uart_send_int((uint8_t)uart_data[5]);
-            // wireless_uart_send_string(",");
-            // wireless_uart_send_int(rush_sign);
-            // wireless_uart_send_string("\n");
-            //if(rush_sign) rush_sign = 0;
+/* 无线串口打印开始 (200Hz, 完全由主循环非阻塞调度, 仅在运动时输出) */
+        static uint32_t last_speed_print_ms = 0U;
+        if ((uint32_t)(sys_time_ms - last_speed_print_ms) >= 5U) { // 5ms = 200Hz
+            last_speed_print_ms = sys_time_ms;
+            if (Test_Is_Moving()) {
+                wireless_uart_output_actual_speed(); // 输出四轮合成的实际 (vx, vy)，单位 m/s
+            }
         }
 /* 无线串口打印结束 */
 

@@ -95,6 +95,15 @@ static void Test_Program_A(void)
 {
     static Test_Ctx_t ctx = {0};
     if (!Test_Entry(&ctx)) return;                    // 锁车(急停/ch8): 冻结; 首轮建立基准
+    static uint8_t logged_phase = 255;
+    if (logged_phase != ctx.phase) {
+        logged_phase = ctx.phase;
+        if (ctx.phase == 0) {
+            wireless_uart_send_string("--- TEST A START: 1.0m/s for 2s ---\r\n");
+        } else {
+            wireless_uart_send_string("--- TEST A STOPPED ---\r\n");
+        }
+    }
     switch (ctx.phase) {
         case 0: // 前进 1.0m/s 持续 2000ms
             Mecanum_Set_Velocity(TEST_A_SPEED_MPS, 0.0f, 0.0f);
@@ -154,6 +163,17 @@ void Test_Execute(void)
 #elif ACTIVE_TEST == TEST_SELECT_C
     Test_Program_C();
 #endif
+}
+
+// [新增] 判断小车当前是否处于运动状态 (目标非0 或 实际合成速度>0.02m/s)
+uint8_t Test_Is_Moving(void)
+{
+    float vx_act = (encoder_data.lf + encoder_data.rf + encoder_data.lb + encoder_data.rb) * 0.25f;
+    float vy_act = (-encoder_data.lf + encoder_data.rf + encoder_data.lb - encoder_data.rb) * 0.25f;
+    float spd_sq = vx_act * vx_act + vy_act * vy_act;
+
+    // 目标速度不为0，或者处于刹停过渡期(速度仍未降到0.02m/s以内)
+    return (target_vel.vx != 0.0f || target_vel.vy != 0.0f || target_vel.wz != 0.0f || spd_sq > 0.0004f);
 }
 
 // ================== IMU 测试 (保持不变) ==================
