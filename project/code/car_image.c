@@ -8,7 +8,7 @@ float dist_out = 0;                        // 最近一次正常state3解算的�
 volatile float visual_last_vx = 0.0f;      // 当前保留的车体系X向速度指令 (m/s，前为正)
 volatile float visual_last_vy = 0.0f;      // 当前保留的车体系Y向速度指令 (m/s，右为正)
 volatile uint32_t dash_end_time = 0;        // Dash绝对结束时刻 (sys_time_ms，0表示未激活)
-static volatile uint32_t post_dash_hold_end_time = 0; // Dash减速与静止等待的绝对结束时刻
+volatile uint32_t post_dash_hold_end_time = 0; // Dash减速与静止等待的绝对结束时刻
 volatile uint32_t rush_cooldown_end_time = 0; // 下次允许触发Dash的绝对时刻 (0表示无冷却)
 
 // ================== 无人机前馈 ==================

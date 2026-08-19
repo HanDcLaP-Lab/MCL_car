@@ -149,10 +149,26 @@ yaw角: 顺时针为正
 - ❌ **删除被注释掉的调试代码** — 它们可能在后续调试中有用
 - ❌ **删除未使用的声明** — 声明但未用过的变量/结构体/函数不删除，后续可能会使用
 
+## COMMANDS
+
+**Build** (Windows + IAR only):
+```cmd
+:: Open IDE
+start project/iar/cyt2bl3.eww              :: Master workspace
+
+:: CLI build (IAR installed, 增量编译 -make + 8核并行, 秒级完成)
+iarbuild.exe "project/iar/project_config/cyt2bl3.ewp" -make Debug -parallel 8
+
+:: 全量重新编译 (仅在清理后或必要时使用 -build)
+:: iarbuild.exe "project/iar/project_config/cyt2bl3.ewp" -build Debug -parallel 8
+```
+
+**Clean**: Run `project/iar/删除临时文件IAR.bat` (Windows only)
+
 ## NOTES
 
 - **主头文件**: 所有 .c 通过 `#include "zf_common_headfile.h"` 引入一切，不要单独 include 子头文件
-- **编译环境**: 需要在 IAR 9.40.1 中打开 `project/iar/cyt2bl3.eww`，选 Debug_m4 配置编译
+- **编译环境**: 需要在 IAR 9.40.1 中打开 `project/iar/cyt2bl3.eww`，选 Debug (输出目录 Debug_m4) 配置编译
 - **编码格式**: main 和 isr 文件使用 UTF-8
 - **无线调参**: 通过 SEEKFREE Assistant 上位机 + 无线串口模块实时调整 PID 参数
 - **IMU 校准**: 上电后需等待 `imu_car_data.is_calibrated == 1`，期间电机锁定

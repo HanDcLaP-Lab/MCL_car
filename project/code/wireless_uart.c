@@ -1,4 +1,5 @@
 #include "zf_common_headfile.h"
+#include "car_image.h"
 
 uint8 data_buffer[32];
 uint8 data_len;
@@ -96,19 +97,28 @@ void wireless_uart_output_imu(void){
 void wireless_uart_output_encoder(void){
     wireless_uart_send_float(encoder_data.lf);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(target_vel.v_lf);
-    wireless_uart_send_string(",");
+    // wireless_uart_send_float(target_vel.v_lf);
+    // wireless_uart_send_string(",");
     wireless_uart_send_float(encoder_data.rf);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(target_vel.v_rf);
-    wireless_uart_send_string(",");
+    // wireless_uart_send_float(target_vel.v_rf);
+    // wireless_uart_send_string(",");
     wireless_uart_send_float(encoder_data.lb);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(target_vel.v_lb);
-    wireless_uart_send_string(",");
+    // wireless_uart_send_float(target_vel.v_lb);
+    // wireless_uart_send_string(",");
     wireless_uart_send_float(encoder_data.rb);
     wireless_uart_send_string(",");
-    wireless_uart_send_float(target_vel.v_rb);
+    // wireless_uart_send_float(target_vel.v_rb);
+    // wireless_uart_send_string("\n");
+
+    wireless_uart_send_float(motor_output.lf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(motor_output.rf);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(motor_output.lb);
+    wireless_uart_send_string(",");
+    wireless_uart_send_float(motor_output.rb);
     wireless_uart_send_string("\n");
 }
 
@@ -222,3 +232,96 @@ void wireless_uart_output_commu(void){
 void print_imu(void){
     printf("%.2f,%.2f,%.2f\r\n", imu_car_data.roll, imu_car_data.pitch, imu_car_data.yaw);
 }
+
+/**
+ * @brief 检查并在车模停车/解除武装时向上位机无线打印停车原因
+ * @note  具备跳变即时触发 + 500ms 限频持续上报双重机制，杜绝总线风暴与 FIFO 阻塞
+ */
+void wireless_uart_check_and_output_stop_reason(void) {
+    extern volatile uint32_t sys_time_ms;
+    extern volatile uint32_t drone_timeout_debug;
+
+    static uint8_t  last_was_stopped = 0;
+    static uint8_t  last_disarm_flags = 0;
+    static uint32_t last_print_time_ms = 0;
+
+    uint8_t flags = Chassis_Get_Disarm_Flags();
+    uint8_t armed = (uint8_t)Chassis_Is_Armed();
+    float spd_sq = visual_last_vx * visual_last_vx + visual_last_vy * visual_last_vy;
+    uint8_t is_dash = (dash_end_time > 0 && sys_time_ms < dash_end_time);
+    uint8_t is_post_dash = (post_dash_hold_end_time > 0 && sys_time_ms < post_dash_hold_end_time);
+
+    // 判定当前是否处于停车态：未武装(Disarmed)，或视觉速度为0且不在冲刺中，或处于Dash后制动静止期
+    uint8_t is_stopped = (!armed || (spd_sq < 0.001f && !is_dash) || is_post_dash);
+
+    if (!is_stopped) {
+        last_was_stopped = 0;
+        last_disarm_flags = flags;
+        return;
+    }
+
+    uint32_t now = sys_time_ms;
+    uint8_t is_edge = (!last_was_stopped || flags != last_disarm_flags);
+    uint8_t is_periodic = (now - last_print_time_ms >= 500U);
+
+    if (!is_edge && !is_periodic) {
+        return;
+    }
+
+    last_was_stopped = 1;
+    last_disarm_flags = flags;
+    last_print_time_ms = now;
+
+    // 输出前缀与停车原因
+    wireless_uart_send_string("STOP,REASON:");
+
+    // 1. 底盘 Disarm 原因判定 (按优先级)
+    if (!armed) {
+        if (flags & DISARM_UNCALIBRATED) {
+            wireless_uart_send_string("UNCALIB");
+        } else if (flags & DISARM_MANUAL) {
+            wireless_uart_send_string("MANUAL_ESTOP");
+        } else if (flags & DISARM_COMM_LOST) {
+            wireless_uart_send_string("COMM_LOST");
+        } else if (flags & DISARM_DRONE_STOPPED) {
+            wireless_uart_send_string("DRONE_STOPPED");
+        } else if (flags & DISARM_MAINLOOP_STALL) {
+            wireless_uart_send_string("MAINLOOP_STALL");
+        } else {
+            wireless_uart_send_string("UNKNOWN_DISARM");
+        }
+    }
+    // 2. 视觉控制层停产原因判定 (已武装但速度为0)
+    else if (is_post_dash) {
+        wireless_uart_send_string("POST_DASH_HOLD");
+    } else {
+        uint8_t locked_state = (uint8_t)uart_data[5];
+        if (locked_state == 0) {
+            wireless_uart_send_string("VISUAL_STATE_0");
+        } else if (locked_state == 1) {
+            wireless_uart_send_string("VISUAL_STATE_1_NO_BEACON");
+        } else if (locked_state == 2) {
+            wireless_uart_send_string("VISUAL_STATE_2_NO_CAR");
+        } else if (locked_state == 3) {
+            wireless_uart_send_string("VISUAL_STATE_3_NO_TARGET");
+        } else {
+            wireless_uart_send_string("VISUAL_ZERO_VEL");
+        }
+    }
+
+    // 输出详细状态参数
+    wireless_uart_send_string(",flags:");
+    wireless_uart_send_int((int32_t)flags);
+    wireless_uart_send_string(",arm:");
+    wireless_uart_send_int((int32_t)armed);
+    wireless_uart_send_string(",ce:");
+    wireless_uart_send_float(uart_data[6]);
+    wireless_uart_send_string(",ls:");
+    wireless_uart_send_int((int32_t)((uint8_t)uart_data[5]));
+    wireless_uart_send_string(",dist:");
+    wireless_uart_send_float(uart_data[7]);
+    wireless_uart_send_string(",to:");
+    wireless_uart_send_int((int32_t)drone_timeout_debug);
+    wireless_uart_send_string("\r\n");
+}
+

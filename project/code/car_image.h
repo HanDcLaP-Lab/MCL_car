@@ -25,6 +25,7 @@ void Image_Solve(float car_yaw, float *dist, float *angle);
 extern volatile float    visual_last_vx;
 extern volatile float    visual_last_vy;
 extern volatile uint32_t dash_end_time;
+extern volatile uint32_t post_dash_hold_end_time;
 extern volatile uint32_t rush_cooldown_end_time;
 extern int rush_sign;
 extern float dist_out;
