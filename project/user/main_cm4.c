@@ -217,7 +217,7 @@ int main(void)
 
 /* 无线串口打印开始 */
         // 自动检测停车并在停下时向上位机无线输出急停/停机原因 (带跳变即时输出与 500ms 限频保护)
-        wireless_uart_check_and_output_stop_reason();
+        //wireless_uart_check_and_output_stop_reason();
 
         if (board_comm_debug_pending) {
             board_comm_debug_pending = 0;
