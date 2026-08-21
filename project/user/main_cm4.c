@@ -262,13 +262,13 @@ int main(void)
 void Wireless_Update(uint8_t ch, float val) {
     switch (ch) {
         case 1:
-            YAW_RATE_KP = val;
+            YAW_KP = val;
             break;
         case 2:
-            YAW_RATE_KI = val;
+            YAW_KI = val;
             break;
         case 3:
-            YAW_RATE_KD = val;
+            YAW_KD = val;
             break;
         case 4:
             KP = val;

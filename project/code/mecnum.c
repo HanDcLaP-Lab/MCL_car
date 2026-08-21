@@ -13,12 +13,19 @@ PID_t pid_yaw_rate;
 // [位置环参数] (暂未启用，位置环控制待实现)
 // float POS_KP=0.015f, POS_KI=0.0f, POS_KD=0.0f, POS_MAX_I=0.5f, POS_OUT_MAX=1.0f;
 
-// [参数调整] 
-float YAW_KP=0.16f, YAW_KI=0.0f, YAW_KD=0.01f, YAW_MAX_I=10.0f, YAW_OUT_MAX=1.6f;
+// [参数调整 - 偏航单环PID参数, 已融合角速度内环阻尼到KD] 
+float YAW_KP=0.24f, YAW_KI=0.0f, YAW_KD=0.041f, YAW_MAX_I=1.0f, YAW_OUT_MAX=1.5f;
 
 float YAW_RATE_KP=1.5f, YAW_RATE_KI=0.0f, YAW_RATE_KD=0.0f, YAW_RATE_MAX_I=1.0f, YAW_RATE_OUT_MAX=1.5f;
 Target_t target_vel = {0};//目标运行情况
 Motor_Output_t motor_output = {0};
+
+// [新增] 目标偏航角 (连续累积角度，单位: 度)
+float target_yaw = 0.0f;
+
+void Mecanum_Set_Target_Yaw(float yaw) {
+    target_yaw = yaw;
+}
 
 // 【新增】斜坡函数相关的平滑速度变量
 float smooth_vx = 0.0f;
@@ -152,6 +159,7 @@ void Mecanum_Init(void) {
     target_vel.vx = 0;
     target_vel.vy = 0;
     target_vel.wz = 0;
+    target_yaw = 0.0f;
 }
 
 volatile uint32_t sys_time_ms = 0;
@@ -236,37 +244,33 @@ void Mecanum_Control_Loop(void) {
     }
     
     // ==========================================================
-    // 【核心二】角度-角速度 串级双环 (死死咬住航向，绝不偏转)
+    // 【核心二】偏航单环 PID (死死咬住航向，已融合角速度阻尼到 KD)
     // ==========================================================
     float final_wz = smooth_wz; // 默认采用平滑后的目标自转速度
     
     if (armed) {
-            // 将陀螺仪实际角速度从 deg/s 转换为 rad/s，统一量纲！
-            float current_rate_rad = imu_car_data.yaw_rate * ((float)M_PI / 180.0f);
-
         // 如果外部没有要求自转 (判断平滑后的 smooth_wz 近似为0)，启动 Yaw 锁死
         if (fabsf(smooth_wz) < 0.05f) {
             
-            // --- 外环：角度控制 (只管方向) ---
-            float yaw_error = 0.0f - imu_car_data.yaw_total;   // 单位：度
+            // --- 角度环控制 (直接输出期望底盘自转角速度 rad/s) ---
+#if HEADING_ALIGN_ENABLE
+            float yaw_error = target_yaw - imu_car_data.yaw_total;   // 单位：度 (动态最近对准目标航向)
+#else
+            float yaw_error = 0.0f - imu_car_data.yaw_total;         // 单位：度 (固定0°锁定)
+#endif
 
             // 角度死区：1.5度以内放弃纠偏，防止原地鬼畜发热
             if (fabsf(yaw_error) < 1.5f) {
                 yaw_error = 0.0f;
             }
-            // 外环输出 = 期望车体转多快 (rad/s)
-            float target_yaw_rate = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);
-
-            // --- 内环：角速度控制 (抵抗打滑) ---
-            float rate_error = target_yaw_rate - current_rate_rad;
-            // 内环输出 = 给逆解算的最终瞬间补偿量 (final_wz 绝对不能再过斜坡平滑)
-            final_wz = PID_Calculate(&pid_yaw_rate, rate_error, CONTROL_DT);
+            // 单环 PID 直接输出底盘目标自转角速度 final_wz (rad/s)
+            final_wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);
 
         } else {
-            // 如果外部发送了主动旋转命令，外环暂停，内环直接跟踪平滑后的角速度
+            // 如果外部发送了主动旋转命令，复位角度环并直接跟踪平滑角速度
             PID_Reset(&pid_yaw_hold); 
-            float rate_error = smooth_wz - current_rate_rad;
-            final_wz = PID_Calculate(&pid_yaw_rate, rate_error, CONTROL_DT);
+            target_yaw = imu_car_data.yaw_total;
+            final_wz = smooth_wz;
         }
     }
     f_t = final_wz; // 记录用于调试输出
@@ -274,15 +278,27 @@ void Mecanum_Control_Loop(void) {
     // ==========================================================
     // 【核心三】运动学逆解算
     // ==========================================================
+#if HEADING_ALIGN_ENABLE
+    // 将地面系平滑速度实时投影到当前车体系 (X前, Y左)
+    float cur_yaw_rad = imu_car_data.yaw * ((float)M_PI / 180.0f);
+    float cos_yaw = cosf(cur_yaw_rad);
+    float sin_yaw = sinf(cur_yaw_rad);
+    float body_vx = smooth_vx * cos_yaw + smooth_vy * sin_yaw;
+    float body_vy = smooth_vx * sin_yaw - smooth_vy * cos_yaw;
+#else
+    float body_vx = smooth_vx;
+    float body_vy = smooth_vy;
+#endif
+
     // 使用闭环输出的 final_wz 直接计算旋转所需的差速
     float center_v = final_wz * (CAR_L + CAR_W);
 
     // 逆解算公式
-    target_vel.v_lf = smooth_vx - smooth_vy + center_v;
-    target_vel.v_rf = smooth_vx + smooth_vy - center_v;
+    target_vel.v_lf = body_vx - body_vy + center_v;
+    target_vel.v_rf = body_vx + body_vy - center_v;
 
-    target_vel.v_lb = smooth_vx + smooth_vy + center_v;
-    target_vel.v_rb = smooth_vx - smooth_vy - center_v;
+    target_vel.v_lb = body_vx + body_vy + center_v;
+    target_vel.v_rb = body_vx - body_vy - center_v;
 
     // ==========================================================
     // 【核心四】底层轮速 PID 计算与防饱和机制

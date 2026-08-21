@@ -116,6 +116,10 @@ extern PID_t pid_yaw_rate;
 // 在 extern float YAW_KP... 下方添加内环参数声明：
 extern float YAW_RATE_KP, YAW_RATE_KI, YAW_RATE_KD, YAW_RATE_MAX_I, YAW_RATE_OUT_MAX;
 
+// [新增] 目标偏航角 (连续累积角度，单位: 度)
+extern float target_yaw;
+void Mecanum_Set_Target_Yaw(float yaw);
+
 extern Motor_Output_t motor_output;
 extern float ang_out;
 /**

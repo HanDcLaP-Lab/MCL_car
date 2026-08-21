@@ -1,12 +1,17 @@
 #ifndef _CONFIG_H
 #define _CONFIG_H
 
-#define STRATEGY (3)
+#define STRATEGY (1)
 
 #define TEST_MODE_NORMAL       0
 #define TEST_MODE_TEST         1
 #define TEST_MODE_IMU          2
 #define TEST_MODE              0
+
+// ================== 航向对齐与地面系解耦开关 ==================
+// 1: 启用地面系解耦速度与跨180度最近前/后端航向对齐 (利用前进/后退极速)
+// 0: 原有固定0°锁死与车体系速度逻辑
+#define HEADING_ALIGN_ENABLE    0
 
 #if STRATEGY == 1
 // ================== 小车运动参数 ==================

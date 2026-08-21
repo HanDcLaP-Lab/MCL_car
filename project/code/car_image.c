@@ -190,6 +190,9 @@ static void Visual_Invalidate_Velocity(void) {
     target_vel.vx = 0.0f;
     target_vel.vy = 0.0f;
     target_vel.wz = 0.0f;
+#if HEADING_ALIGN_ENABLE
+    target_yaw = imu_car_data.yaw_total;
+#endif
 }
 
 static uint8_t Visual_Set_Velocity(float vx, float vy, float wz) {
@@ -463,8 +466,45 @@ static uint8_t target_filter_update(uint8_t locked_state) {
 
     // ④ 将身份滤波结果转换为固定模长速度方向，供State12/State3继续处理。
     if (adopted_ok) {
+#if HEADING_ALIGN_ENABLE
+        // 1. 计算地面系目标绝对方位角 (度, 顺时针正, 范围 [-180, 180])
+        // adopted_angle.angle 为小车车体系 atan2 角 (rad, 0°=车头, 顺时针正)
+        float theta_earth_deg = imu_car_data.yaw - adopted_angle.angle * (180.0f / (float)M_PI);
+        while (theta_earth_deg > 180.0f) theta_earth_deg -= 360.0f;
+        while (theta_earth_deg < -180.0f) theta_earth_deg += 360.0f;
+
+        // 2. 跨 180 度计算当前单圈航向与地面目标的最短夹角差 (-180 ~ +180)
+        float yaw_now = imu_car_data.yaw;
+        float delta_theta = theta_earth_deg - yaw_now;
+        while (delta_theta > 180.0f) delta_theta -= 360.0f;
+        while (delta_theta < -180.0f) delta_theta += 360.0f;
+
+        // 3. 双向 (前/后) 折叠，寻找最近对准端 (行程严格限制在 [-90, +90])
+        float delta_align;
+        if (fabsf(delta_theta) <= 90.0f) {
+            // 车头更近: 车头对准目标 (前进冲刺)
+            delta_align = delta_theta;
+        } else {
+            // 车尾更近: 车尾对准目标 (倒车冲刺)
+            if (delta_theta > 90.0f) {
+                delta_align = delta_theta - 180.0f;
+            } else {
+                delta_align = delta_theta + 180.0f;
+            }
+        }
+
+        // 4. 构造无限量程目标航向角 target_yaw (供底盘 1ms 偏航外环跟踪)
+        target_yaw = imu_car_data.yaw_total + delta_align;
+
+        // 5. 地面系期望速度矢量 (X前, Y右, NED地面系)
+        // 沿地面真实目标方向 theta_earth_deg 以 TARGET_SPEED 推进
+        float theta_earth_rad = theta_earth_deg * ((float)M_PI / 180.0f);
+        visual_last_vx = TARGET_SPEED * cosf(theta_earth_rad);
+        visual_last_vy = TARGET_SPEED * sinf(theta_earth_rad);
+#else
         visual_last_vx = TARGET_SPEED * cosf(adopted_angle.angle);
         visual_last_vy = TARGET_SPEED * sinf(adopted_angle.angle);
+#endif
         return 1;
     }
 
@@ -485,6 +525,9 @@ static void State0_Handler(void) {
     dash_end_time = 0;
     visual_last_vx = 0.0f;
     visual_last_vy = 0.0f;
+#if HEADING_ALIGN_ENABLE
+    target_yaw = imu_car_data.yaw_total;
+#endif
     car_slot.valid = 0;
     for (uint8_t i = 0; i < TARGET_CANDIDATE_COUNT; i++) {
         target_slot[i].valid = 0;
@@ -605,6 +648,9 @@ void Visual_State_Reset(void) {
     visual_last_vx = 0.0f;
     visual_last_vy = 0.0f;
     post_dash_hold_end_time = 0;
+#if HEADING_ALIGN_ENABLE
+    target_yaw = imu_car_data.yaw_total;
+#endif
     car_slot.valid = 0;
     for (uint8_t i = 0; i < TARGET_CANDIDATE_COUNT; i++) {
         target_slot[i].valid = 0;
