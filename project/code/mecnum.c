@@ -4,7 +4,7 @@
 #include <math.h>
 float f_t = 0;
 
-float KP=6000.0f, KI=65000.0f, KD=0.0f, MAX_I=4500.0f;
+float KP=6000.0f, KI=90000.0f, KD=0.0f, MAX_I=4500.0f;
 
 // ================== 全局变量 ==================
 PID_t pid_lf, pid_rf, pid_lb, pid_rb;//速度环pid
@@ -14,7 +14,7 @@ PID_t pid_yaw_rate;
 // float POS_KP=0.015f, POS_KI=0.0f, POS_KD=0.0f, POS_MAX_I=0.5f, POS_OUT_MAX=1.0f;
 
 // [参数调整 - 偏航单环PID参数, 已融合角速度内环阻尼到KD] 
-float YAW_KP=0.24f, YAW_KI=0.0f, YAW_KD=0.041f, YAW_MAX_I=1.0f, YAW_OUT_MAX=1.5f;
+float YAW_KP=0.2f, YAW_KI=0.0f, YAW_KD=0.04f, YAW_MAX_I=1.0f, YAW_OUT_MAX=1.75f;
 
 float YAW_RATE_KP=1.5f, YAW_RATE_KI=0.0f, YAW_RATE_KD=0.0f, YAW_RATE_MAX_I=1.0f, YAW_RATE_OUT_MAX=1.5f;
 Target_t target_vel = {0};//目标运行情况
