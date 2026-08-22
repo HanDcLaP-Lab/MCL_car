@@ -120,6 +120,10 @@ extern float YAW_RATE_KP, YAW_RATE_KI, YAW_RATE_KD, YAW_RATE_MAX_I, YAW_RATE_OUT
 extern float target_yaw;
 void Mecanum_Set_Target_Yaw(float yaw);
 
+// [新增] 竞速冲刺对齐速度放大与转角屏蔽参数
+extern float ALIGN_SPEED_BOOST;
+extern float SHIELD_TRANS_DEG;
+
 extern Motor_Output_t motor_output;
 extern float ang_out;
 /**

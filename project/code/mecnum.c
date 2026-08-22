@@ -23,6 +23,10 @@ Motor_Output_t motor_output = {0};
 // [新增] 目标偏航角 (连续累积角度，单位: 度)
 float target_yaw = 0.0f;
 
+// [新增] 竞速冲刺对齐速度放大与转角屏蔽参数 (可通过无线串口实时调参)
+float ALIGN_SPEED_BOOST = 0.35f;  // 小角度冲刺速度放大系数 (默认放大 1.35 倍)
+float SHIELD_TRANS_DEG  = 6.0f;   // 转角屏蔽与加速过渡门限角度 (度)
+
 void Mecanum_Set_Target_Yaw(float yaw) {
     target_yaw = yaw;
 }
@@ -244,9 +248,10 @@ void Mecanum_Control_Loop(void) {
     }
     
     // ==========================================================
-    // 【核心二】偏航单环 PID (死死咬住航向，已融合角速度阻尼到 KD)
+    // 【核心二】偏航单环 PID (死死咬住航向，带局部连续转角屏蔽)
     // ==========================================================
     float final_wz = smooth_wz; // 默认采用平滑后的目标自转速度
+    float yaw_error = 0.0f;
     
     if (armed) {
         // 如果外部没有要求自转 (判断平滑后的 smooth_wz 近似为0)，启动 Yaw 锁死
@@ -254,17 +259,22 @@ void Mecanum_Control_Loop(void) {
             
             // --- 角度环控制 (直接输出期望底盘自转角速度 rad/s) ---
 #if HEADING_ALIGN_ENABLE
-            float yaw_error = target_yaw - imu_car_data.yaw_total;   // 单位：度 (动态最近对准目标航向)
+            yaw_error = target_yaw - imu_car_data.yaw_total;   // 单位：度 (动态最近对准目标航向)
 #else
-            float yaw_error = 0.0f - imu_car_data.yaw_total;         // 单位：度 (固定0°锁定)
+            yaw_error = 0.0f - imu_car_data.yaw_total;         // 单位：度 (固定0°锁定)
 #endif
 
-            // 角度死区：1.5度以内放弃纠偏，防止原地鬼畜发热
-            if (fabsf(yaw_error) < 1.5f) {
-                yaw_error = 0.0f;
+            // [新增] 局部连续转角屏蔽权重: 仅在门限内平滑衰减，门限外保持 100% 满额转向力矩
+            float abs_err = fabsf(yaw_error);
+            float yaw_weight = 1.0f;
+            if (SHIELD_TRANS_DEG > 0.001f && abs_err < SHIELD_TRANS_DEG) {
+                // 升余弦平滑函数 (C1连续，端点导数为0，彻底杜绝跳变与临界振荡)
+                yaw_weight = 0.5f * (1.0f - cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
             }
+
             // 单环 PID 直接输出底盘目标自转角速度 final_wz (rad/s)
             final_wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);
+            final_wz *= yaw_weight; // 小角度平滑闭锁转角，中大角度 100% 满额自转
 
         } else {
             // 如果外部发送了主动旋转命令，复位角度环并直接跟踪平滑角速度
@@ -276,7 +286,7 @@ void Mecanum_Control_Loop(void) {
     f_t = final_wz; // 记录用于调试输出
 
     // ==========================================================
-    // 【核心三】运动学逆解算
+    // 【核心三】运动学逆解算 (对齐提速放大 + 屏蔽横移)
     // ==========================================================
 #if HEADING_ALIGN_ENABLE
     // 将地面系平滑速度实时投影到当前车体系 (X前, Y左)
@@ -285,6 +295,15 @@ void Mecanum_Control_Loop(void) {
     float sin_yaw = sinf(cur_yaw_rad);
     float body_vx = smooth_vx * cos_yaw + smooth_vy * sin_yaw;
     float body_vy = smooth_vx * sin_yaw - smooth_vy * cos_yaw;
+
+    // [新增] 小角度冲刺速度连续放大与横移平滑消除 (无中段动力凹陷)
+    float abs_err = fabsf(yaw_error);
+    if (SHIELD_TRANS_DEG > 0.001f && abs_err < SHIELD_TRANS_DEG) {
+        float boost_weight = 0.5f * (1.0f + cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
+        float speed_scale = 1.0f + ALIGN_SPEED_BOOST * boost_weight;
+        body_vx *= speed_scale;
+        body_vy *= (1.0f - boost_weight); // 小角度平滑消除横移损耗
+    }
 #else
     float body_vx = smooth_vx;
     float body_vy = smooth_vy;
