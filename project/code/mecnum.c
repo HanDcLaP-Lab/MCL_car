@@ -278,6 +278,7 @@ void Mecanum_Control_Loop(void) {
             float yaw_weight = 1.0f;
             boost_weight = 0.0f;
 
+#if HEADING_ALIGN_ENABLE
             // [可回退模式2: 历史转角屏蔽] 仅当 SHIELD_TRANS_DEG > 0.001f 时才衰减转向力矩
             if (SHIELD_TRANS_DEG > 0.001f) {
                 if (abs_err < SHIELD_TRANS_DEG) {
@@ -311,6 +312,13 @@ void Mecanum_Control_Loop(void) {
                     yaw_error = 0.0f;
                 }
             }
+#else
+            // 关闭航向对齐：固定0°锁死只保留微死区，不做任何盲冲/屏蔽/速度放大，
+            // 保证各方向都以原始满速运行，不受 ALIGN_SPEED_BOOST / SHIELD_TRANS_DEG 影响。
+            if (abs_err < 1.0f) {
+                yaw_error = 0.0f;
+            }
+#endif
 
             // 单环 PID 直接输出底盘目标自转角速度 final_wz (rad/s)
             final_wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);
