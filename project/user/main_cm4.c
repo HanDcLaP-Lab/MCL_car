@@ -277,10 +277,10 @@ void Wireless_Update(uint8_t ch, float val) {
             KI = val;
             break;
         case 6:
-            ALIGN_SPEED_BOOST = val; // [新增] 小角度冲刺速度放大系数 (如 0.35 表示放大 1.35 倍)
+            KD = val;
             break;
         case 7:
-            SHIELD_TRANS_DEG = val;  // [新增] 模式选择: 0=新盲冲带; >0=旧局部屏蔽 (如 6.0)
+            feedforward_hesitate_ms = (uint32_t)val; // [新增] 无人机前馈犹豫期 (ms)
             break;
         case 8:
             if(val == 1){
