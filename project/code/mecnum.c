@@ -25,12 +25,17 @@ float target_yaw = 0.0f;
 
 // [新增] 竞速冲刺对齐速度放大与转角屏蔽参数 (可通过无线串口实时调参)
 // 通道6 (ALIGN_SPEED_BOOST): 冲刺速度放大系数 (默认 0.35 即放大 1.35 倍)
-// 通道7 (SHIELD_TRANS_DEG):
-//   = 0.0f (默认): 启用新方案 (纯矢量保形同向模长放大 + 航向快速收敛纠偏，彻底解决近距离视线角发散与vy失真)
-//   > 0.0f (如 6.0f): 回退到方案2 (历史局部升余弦转角屏蔽与 vy 衰减模式)
-//   若两项均设为 0: 彻底回退到方案3 (完全无放大的原始基准模式)
+// 通道7 (SHIELD_TRANS_DEG): 三态模式选择
+//   = 0.0f (默认): 启用新方案 (矢量保形同向放大 + 无阶跃盲冲带)
+//   < 0.0f (如 -1.0f): 回退到 8.23a 快速纠偏方案 (无盲冲带，矢量保形放大)
+//   > 0.0f (如 6.0f): 回退到 8.22b 历史局部屏蔽方案 (余弦屏蔽 + vy 衰减)
+//   若通道6也设为 0: 彻底回退到方案3 (完全无放大的原始基准模式)
 float ALIGN_SPEED_BOOST = 0.35f;  // 小角度冲刺速度放大系数
-float SHIELD_TRANS_DEG  = 0.0f;   // 模式切换门限: 0=保形同向放大新方案; >0=局部屏蔽衰减旧方案
+float SHIELD_TRANS_DEG  = 0.0f;   // 模式切换门限: 0=新盲冲带; <0=旧快速纠偏; >0=旧局部屏蔽
+
+// [新增] 新方案盲冲带参数 (通道7=0时生效，默认 1° 内完全盲冲、5° 起满额纠偏)
+float ALIGN_BLIND_END_DEG    = 1.0f;  // 完全盲冲误差上限 (度)
+float ALIGN_CORRECT_FULL_DEG = 5.0f;  // 满额纠偏误差起点 (度)
 
 void Mecanum_Set_Target_Yaw(float yaw) {
     target_yaw = yaw;
@@ -257,7 +262,8 @@ void Mecanum_Control_Loop(void) {
     // ==========================================================
     float final_wz = smooth_wz; // 默认采用平滑后的目标自转速度
     float yaw_error = 0.0f;
-    
+    float boost_weight = 0.0f;  // 冲刺放大权重，供核心三复用 (0=不放大, 1=全速放大)
+
     if (armed) {
         // 如果外部没有要求自转 (判断平滑后的 smooth_wz 近似为0)，启动 Yaw 锁死
         if (fabsf(smooth_wz) < 0.05f) {
@@ -271,18 +277,51 @@ void Mecanum_Control_Loop(void) {
 
             float abs_err = fabsf(yaw_error);
             float yaw_weight = 1.0f;
+            boost_weight = 0.0f;
 
             // [可回退模式2: 历史转角屏蔽] 仅当 SHIELD_TRANS_DEG > 0.001f 时才衰减转向力矩
-            if (SHIELD_TRANS_DEG > 0.001f && abs_err < SHIELD_TRANS_DEG) {
-                yaw_weight = 0.5f * (1.0f - cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
-            } else if (abs_err < 1.0f) {
-                // 新方案/基准模式: 1.0度微死区防原地发热微震
-                yaw_error = 0.0f;
+            if (SHIELD_TRANS_DEG > 0.001f) {
+                if (abs_err < SHIELD_TRANS_DEG) {
+                    yaw_weight = 0.5f * (1.0f - cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
+                    boost_weight = 0.5f * (1.0f + cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
+                }
+            } else if (SHIELD_TRANS_DEG < -0.001f) {
+                // [可回退模式1旧版: 8.23a 快速纠偏] 通道7为负时启用，无盲冲带
+                // 保持 1° 微死区，yaw_weight 恒为 1，速度放大仍由核心三的 cos² 因子完成
+                if (abs_err < 1.0f) {
+                    yaw_error = 0.0f;
+                }
+            } else if (ALIGN_SPEED_BOOST > 0.001f) {
+                // [推荐新方案1] 无阶跃盲冲带：小误差完全盲冲，大误差满额纠偏
+                // 误差 <= ALIGN_BLIND_END_DEG 时 yaw_weight=0 / boost_weight=1 (全速盲冲)
+                // 误差 >= ALIGN_CORRECT_FULL_DEG 时 yaw_weight=1 / boost_weight=0 (满额纠偏)
+                // 中间用升余弦 C1 连续过渡，消除原 1° 死区带来的纠偏力矩阶跃
+                float blind_end = ALIGN_BLIND_END_DEG;
+                float correct_full = ALIGN_CORRECT_FULL_DEG;
+                if (correct_full <= blind_end + 0.1f) {
+                    correct_full = blind_end + 0.1f;
+                }
+                if (abs_err <= blind_end) {
+                    yaw_weight = 0.0f;
+                    boost_weight = 1.0f;
+                } else if (abs_err >= correct_full) {
+                    yaw_weight = 1.0f;
+                    boost_weight = 0.0f;
+                } else {
+                    float t = (abs_err - blind_end) / (correct_full - blind_end);
+                    yaw_weight = 0.5f * (1.0f - cosf(t * (float)M_PI));
+                    boost_weight = 0.5f * (1.0f + cosf(t * (float)M_PI));
+                }
+            } else {
+                // [可回退模式3]: 原始基准模式，保留 1° 微死区防原地发热微震
+                if (abs_err < 1.0f) {
+                    yaw_error = 0.0f;
+                }
             }
 
             // 单环 PID 直接输出底盘目标自转角速度 final_wz (rad/s)
             final_wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);
-            final_wz *= yaw_weight; // 历史屏蔽模式下衰减，新方案/基准模式下 100% 全力快速纠偏
+            final_wz *= yaw_weight; // 模式2衰减转向；新方案/基准模式按权重无阶跃过渡
 
         } else {
             // 如果外部发送了主动旋转命令，复位角度环并直接跟踪平滑角速度
@@ -309,19 +348,24 @@ void Mecanum_Control_Loop(void) {
     if (SHIELD_TRANS_DEG > 0.001f) {
         // [可回退模式2]: 历史局部转角屏蔽与 vy 衰减模式 (通道7设为 >0 如 6.0 时激活)
         if (abs_err < SHIELD_TRANS_DEG) {
-            float boost_weight = 0.5f * (1.0f + cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
             float speed_scale = 1.0f + ALIGN_SPEED_BOOST * boost_weight;
             body_vx *= speed_scale;
             body_vy *= (1.0f - boost_weight);
         }
-    } else if (ALIGN_SPEED_BOOST > 0.001f) {
-        // [推荐新方案1]: 纯矢量保形同向模长放大 (默认模式，通道7=0，通道6>0)
-        // 保持合速度方向严格指向信标，同时航向 PID 全程收敛偏角至 0°，绝不发散
+    } else if (SHIELD_TRANS_DEG < -0.001f && ALIGN_SPEED_BOOST > 0.001f) {
+        // [可回退模式1旧版: 8.23a 快速纠偏] 通道7为负时启用，无盲冲带
+        // 保持合速度方向严格指向信标，同时航向 PID 全程快速收敛
         float err_rad = abs_err * ((float)M_PI / 180.0f);
         float align_factor = cosf(err_rad);
         if (align_factor < 0.0f) align_factor = 0.0f;
-
         float speed_scale = 1.0f + ALIGN_SPEED_BOOST * (align_factor * align_factor);
+        body_vx *= speed_scale;
+        body_vy *= speed_scale; // 同比例缩放，合速度物理方向角严格不变！
+    } else if (ALIGN_SPEED_BOOST > 0.001f) {
+        // [推荐新方案1]: 无阶跃盲冲带 + 纯矢量保形同向模长放大 (默认模式，通道7=0，通道6>0)
+        // 保持合速度方向严格指向信标；小误差盲冲时 boost_weight=1 全速冲刺，
+        // 误差增大后平滑退出全速并恢复满额航向纠偏，全程无阶跃
+        float speed_scale = 1.0f + ALIGN_SPEED_BOOST * boost_weight;
         body_vx *= speed_scale;
         body_vy *= speed_scale; // 同比例缩放，合速度物理方向角严格不变！
     }

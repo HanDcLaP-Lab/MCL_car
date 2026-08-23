@@ -123,6 +123,8 @@ void Mecanum_Set_Target_Yaw(float yaw);
 // [新增] 竞速冲刺对齐速度放大与转角屏蔽参数
 extern float ALIGN_SPEED_BOOST;
 extern float SHIELD_TRANS_DEG;
+extern float ALIGN_BLIND_END_DEG;    // [新增] 新方案完全盲冲误差上限 (度)
+extern float ALIGN_CORRECT_FULL_DEG; // [新增] 新方案满额纠偏误差起点 (度)
 
 extern Motor_Output_t motor_output;
 extern float ang_out;
