@@ -14,7 +14,7 @@ PID_t pid_yaw_rate;
 // float POS_KP=0.015f, POS_KI=0.0f, POS_KD=0.0f, POS_MAX_I=0.5f, POS_OUT_MAX=1.0f;
 
 // [参数调整 - 偏航单环PID参数, 已融合角速度内环阻尼到KD] 
-float YAW_KP=0.2f, YAW_KI=0.0f, YAW_KD=0.04f, YAW_MAX_I=1.0f, YAW_OUT_MAX=1.75f;
+float YAW_KP=0.24f, YAW_KI=0.0f, YAW_KD=0.04f, YAW_MAX_I=1.0f, YAW_OUT_MAX=1.75f;
 
 float YAW_RATE_KP=1.5f, YAW_RATE_KI=0.0f, YAW_RATE_KD=0.0f, YAW_RATE_MAX_I=1.0f, YAW_RATE_OUT_MAX=1.5f;
 Target_t target_vel = {0};//目标运行情况
@@ -24,8 +24,13 @@ Motor_Output_t motor_output = {0};
 float target_yaw = 0.0f;
 
 // [新增] 竞速冲刺对齐速度放大与转角屏蔽参数 (可通过无线串口实时调参)
-float ALIGN_SPEED_BOOST = 0.35f;  // 小角度冲刺速度放大系数 (默认放大 1.35 倍)
-float SHIELD_TRANS_DEG  = 6.0f;   // 转角屏蔽与加速过渡门限角度 (度)
+// 通道6 (ALIGN_SPEED_BOOST): 冲刺速度放大系数 (默认 0.35 即放大 1.35 倍)
+// 通道7 (SHIELD_TRANS_DEG):
+//   = 0.0f (默认): 启用新方案 (纯矢量保形同向模长放大 + 航向快速收敛纠偏，彻底解决近距离视线角发散与vy失真)
+//   > 0.0f (如 6.0f): 回退到方案2 (历史局部升余弦转角屏蔽与 vy 衰减模式)
+//   若两项均设为 0: 彻底回退到方案3 (完全无放大的原始基准模式)
+float ALIGN_SPEED_BOOST = 0.35f;  // 小角度冲刺速度放大系数
+float SHIELD_TRANS_DEG  = 0.0f;   // 模式切换门限: 0=保形同向放大新方案; >0=局部屏蔽衰减旧方案
 
 void Mecanum_Set_Target_Yaw(float yaw) {
     target_yaw = yaw;
@@ -248,7 +253,7 @@ void Mecanum_Control_Loop(void) {
     }
     
     // ==========================================================
-    // 【核心二】偏航单环 PID (死死咬住航向，带局部连续转角屏蔽)
+    // 【核心二】偏航单环 PID (死死咬住航向，快速将偏角抹平至 0°)
     // ==========================================================
     float final_wz = smooth_wz; // 默认采用平滑后的目标自转速度
     float yaw_error = 0.0f;
@@ -264,17 +269,20 @@ void Mecanum_Control_Loop(void) {
             yaw_error = 0.0f - imu_car_data.yaw_total;         // 单位：度 (固定0°锁定)
 #endif
 
-            // [新增] 局部连续转角屏蔽权重: 仅在门限内平滑衰减，门限外保持 100% 满额转向力矩
             float abs_err = fabsf(yaw_error);
             float yaw_weight = 1.0f;
+
+            // [可回退模式2: 历史转角屏蔽] 仅当 SHIELD_TRANS_DEG > 0.001f 时才衰减转向力矩
             if (SHIELD_TRANS_DEG > 0.001f && abs_err < SHIELD_TRANS_DEG) {
-                // 升余弦平滑函数 (C1连续，端点导数为0，彻底杜绝跳变与临界振荡)
                 yaw_weight = 0.5f * (1.0f - cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
+            } else if (abs_err < 1.0f) {
+                // 新方案/基准模式: 1.0度微死区防原地发热微震
+                yaw_error = 0.0f;
             }
 
             // 单环 PID 直接输出底盘目标自转角速度 final_wz (rad/s)
             final_wz = PID_Calculate(&pid_yaw_hold, yaw_error, CONTROL_DT);
-            final_wz *= yaw_weight; // 小角度平滑闭锁转角，中大角度 100% 满额自转
+            final_wz *= yaw_weight; // 历史屏蔽模式下衰减，新方案/基准模式下 100% 全力快速纠偏
 
         } else {
             // 如果外部发送了主动旋转命令，复位角度环并直接跟踪平滑角速度
@@ -286,7 +294,7 @@ void Mecanum_Control_Loop(void) {
     f_t = final_wz; // 记录用于调试输出
 
     // ==========================================================
-    // 【核心三】运动学逆解算 (对齐提速放大 + 屏蔽横移)
+    // 【核心三】运动学逆解算 (矢量保形同向放大 / 多模式回退支持)
     // ==========================================================
 #if HEADING_ALIGN_ENABLE
     // 将地面系平滑速度实时投影到当前车体系 (X前, Y左)
@@ -296,14 +304,28 @@ void Mecanum_Control_Loop(void) {
     float body_vx = smooth_vx * cos_yaw + smooth_vy * sin_yaw;
     float body_vy = smooth_vx * sin_yaw - smooth_vy * cos_yaw;
 
-    // [新增] 小角度冲刺速度连续放大与横移平滑消除 (无中段动力凹陷)
     float abs_err = fabsf(yaw_error);
-    if (SHIELD_TRANS_DEG > 0.001f && abs_err < SHIELD_TRANS_DEG) {
-        float boost_weight = 0.5f * (1.0f + cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
-        float speed_scale = 1.0f + ALIGN_SPEED_BOOST * boost_weight;
+
+    if (SHIELD_TRANS_DEG > 0.001f) {
+        // [可回退模式2]: 历史局部转角屏蔽与 vy 衰减模式 (通道7设为 >0 如 6.0 时激活)
+        if (abs_err < SHIELD_TRANS_DEG) {
+            float boost_weight = 0.5f * (1.0f + cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
+            float speed_scale = 1.0f + ALIGN_SPEED_BOOST * boost_weight;
+            body_vx *= speed_scale;
+            body_vy *= (1.0f - boost_weight);
+        }
+    } else if (ALIGN_SPEED_BOOST > 0.001f) {
+        // [推荐新方案1]: 纯矢量保形同向模长放大 (默认模式，通道7=0，通道6>0)
+        // 保持合速度方向严格指向信标，同时航向 PID 全程收敛偏角至 0°，绝不发散
+        float err_rad = abs_err * ((float)M_PI / 180.0f);
+        float align_factor = cosf(err_rad);
+        if (align_factor < 0.0f) align_factor = 0.0f;
+
+        float speed_scale = 1.0f + ALIGN_SPEED_BOOST * (align_factor * align_factor);
         body_vx *= speed_scale;
-        body_vy *= (1.0f - boost_weight); // 小角度平滑消除横移损耗
+        body_vy *= speed_scale; // 同比例缩放，合速度物理方向角严格不变！
     }
+    // [可回退模式3]: 原始基准模式 (当通道6=0且通道7=0时自动生效，body_vx/vy 保持原样)
 #else
     float body_vx = smooth_vx;
     float body_vy = smooth_vy;
