@@ -25,13 +25,12 @@ float target_yaw = 0.0f;
 
 // [新增] 竞速冲刺对齐速度放大与转角屏蔽参数 (可通过无线串口实时调参)
 // 通道6 (ALIGN_SPEED_BOOST): 冲刺速度放大系数 (默认 0.35 即放大 1.35 倍)
-// 通道7 (SHIELD_TRANS_DEG): 三态模式选择
+// 通道7 (SHIELD_TRANS_DEG): 模式选择
 //   = 0.0f (默认): 启用新方案 (矢量保形同向放大 + 无阶跃盲冲带)
-//   < 0.0f (如 -1.0f): 回退到 8.23a 快速纠偏方案 (无盲冲带，矢量保形放大)
 //   > 0.0f (如 6.0f): 回退到 8.22b 历史局部屏蔽方案 (余弦屏蔽 + vy 衰减)
 //   若通道6也设为 0: 彻底回退到方案3 (完全无放大的原始基准模式)
 float ALIGN_SPEED_BOOST = 0.35f;  // 小角度冲刺速度放大系数
-float SHIELD_TRANS_DEG  = 0.0f;   // 模式切换门限: 0=新盲冲带; <0=旧快速纠偏; >0=旧局部屏蔽
+float SHIELD_TRANS_DEG  = 0.0f;   // 模式切换门限: 0=新盲冲带; >0=旧局部屏蔽
 
 // [新增] 新方案盲冲带参数 (通道7=0时生效，默认 1° 内完全盲冲、5° 起满额纠偏)
 float ALIGN_BLIND_END_DEG    = 1.0f;  // 完全盲冲误差上限 (度)
@@ -285,12 +284,6 @@ void Mecanum_Control_Loop(void) {
                     yaw_weight = 0.5f * (1.0f - cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
                     boost_weight = 0.5f * (1.0f + cosf(abs_err / SHIELD_TRANS_DEG * (float)M_PI));
                 }
-            } else if (SHIELD_TRANS_DEG < -0.001f) {
-                // [可回退模式1旧版: 8.23a 快速纠偏] 通道7为负时启用，无盲冲带
-                // 保持 1° 微死区，yaw_weight 恒为 1，速度放大仍由核心三的 cos² 因子完成
-                if (abs_err < 1.0f) {
-                    yaw_error = 0.0f;
-                }
             } else if (ALIGN_SPEED_BOOST > 0.001f) {
                 // [推荐新方案1] 无阶跃盲冲带：小误差完全盲冲，大误差满额纠偏
                 // 误差 <= ALIGN_BLIND_END_DEG 时 yaw_weight=0 / boost_weight=1 (全速盲冲)
@@ -352,15 +345,6 @@ void Mecanum_Control_Loop(void) {
             body_vx *= speed_scale;
             body_vy *= (1.0f - boost_weight);
         }
-    } else if (SHIELD_TRANS_DEG < -0.001f && ALIGN_SPEED_BOOST > 0.001f) {
-        // [可回退模式1旧版: 8.23a 快速纠偏] 通道7为负时启用，无盲冲带
-        // 保持合速度方向严格指向信标，同时航向 PID 全程快速收敛
-        float err_rad = abs_err * ((float)M_PI / 180.0f);
-        float align_factor = cosf(err_rad);
-        if (align_factor < 0.0f) align_factor = 0.0f;
-        float speed_scale = 1.0f + ALIGN_SPEED_BOOST * (align_factor * align_factor);
-        body_vx *= speed_scale;
-        body_vy *= speed_scale; // 同比例缩放，合速度物理方向角严格不变！
     } else if (ALIGN_SPEED_BOOST > 0.001f) {
         // [推荐新方案1]: 无阶跃盲冲带 + 纯矢量保形同向模长放大 (默认模式，通道7=0，通道6>0)
         // 保持合速度方向严格指向信标；小误差盲冲时 boost_weight=1 全速冲刺，
@@ -373,6 +357,7 @@ void Mecanum_Control_Loop(void) {
 #else
     float body_vx = smooth_vx;
     float body_vy = smooth_vy;
+    (void)boost_weight; // HEADING_ALIGN_ENABLE=0 时屏蔽速度放大，仅避免未使用告警
 #endif
 
     // 使用闭环输出的 final_wz 直接计算旋转所需的差速

@@ -280,7 +280,7 @@ void Wireless_Update(uint8_t ch, float val) {
             ALIGN_SPEED_BOOST = val; // [新增] 小角度冲刺速度放大系数 (如 0.35 表示放大 1.35 倍)
             break;
         case 7:
-            SHIELD_TRANS_DEG = val;  // [新增] 模式选择: 0=新盲冲带; <0=旧快速纠偏; >0=旧局部屏蔽 (如 6.0)
+            SHIELD_TRANS_DEG = val;  // [新增] 模式选择: 0=新盲冲带; >0=旧局部屏蔽 (如 6.0)
             break;
         case 8:
             if(val == 1){
