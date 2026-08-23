@@ -53,7 +53,7 @@
 // ================== 小车运动参数 ==================
 #define TARGET_SPEED            2.2f   // 目标速度 (m/s)
 #define MAX_ACCEL_LINEAR        1000.0f   // 平移加速度上限 (m/s^2)
-#define LARGE_TURN_ACCEL_SCALE  0.6f   // 大角度换向时的平移加速度倍率
+#define LARGE_TURN_ACCEL_SCALE  1.0f   // 大角度换向时的平移加速度倍率
 #define MAX_ACCEL_W             1.0f   // 旋转加速度上限 (rad/s^2)
 
 // ================== Dash 参数 ==================
