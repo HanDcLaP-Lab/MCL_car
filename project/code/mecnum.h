@@ -125,6 +125,10 @@ extern float ALIGN_SPEED_BOOST;
 extern float SHIELD_TRANS_DEG;
 extern float ALIGN_BLIND_END_DEG;    // [新增] 新方案完全盲冲误差上限 (度)
 extern float ALIGN_CORRECT_FULL_DEG; // [新增] 新方案满额纠偏误差起点 (度)
+extern float ALIGN_ENTER_DEG;        // [新增] 新方案进入对准阶段误差门限 (度)
+extern float ALIGN_EXIT_DEG;         // [新增] 新方案退出对准阶段误差门限 (度)
+extern float ALIGN_SLOW_SPEED_SCALE; // [新增] 对准阶段平移速度倍率
+extern float ALIGN_PHASE_RATE;       // [新增] 对准/全速切换平滑速率
 
 extern Motor_Output_t motor_output;
 extern float ang_out;
